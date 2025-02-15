@@ -4,6 +4,6 @@ namespace Bot.Services;
 
 public interface IAuthService
 {
-    Task<string> AuthenticateAsync(string email, string password);
-    Task<UserPlayer> GetPlayerAsync();
+    Task<LoginResponse> LoginAsync(string email, string password);
+    Task<Player> GetPlayerAsync(string token);
 }

@@ -1,70 +1,66 @@
-﻿using Bot.Config;
-using Bot.Services;
+﻿using Bot.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
-var host = Host.CreateDefaultBuilder(args)
-    .ConfigureServices((context, services) =>
+namespace Bot;
+
+public class Program
+{
+    public static async Task Main(string[] args)
     {
-        // Add configuration
-        services.AddSingleton<BotConfig>(sp =>
+        var host = CreateHostBuilder(args).Build();
+        var webSocketClient = host.Services.GetRequiredService<IWebSocketClientService>();
+        var logger = host.Services.GetRequiredService<ILogger<Program>>();
+
+        try
         {
-            var config = new ConfigurationBuilder()
-                .SetBasePath(Directory.GetCurrentDirectory())
-                .AddJsonFile("appsettings.json")
-                .Build();
+            await webSocketClient.StartAsync();
+            logger.LogInformation("Bot started successfully");
 
-            return config.Get<BotConfig>() ?? throw new Exception("BotConfig is null");
-        });
+            // Join a game room
+            var roomId = host.Services.GetRequiredService<IConfiguration>()["RoomId"];
+            if (!string.IsNullOrEmpty(roomId))
+            {
+                await webSocketClient.JoinGameAsync(roomId);
+                logger.LogInformation("Joined game room: {RoomId}", roomId);
+            }
 
-        // Add HttpClient
-        services.AddHttpClient();
-
-        // Add services
-        services.AddScoped<IAuthService>(sp =>
+            // Keep the application running
+            await host.RunAsync();
+        }
+        catch (Exception ex)
         {
-            var config = sp.GetRequiredService<BotConfig>();
-            var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
-            return new AuthService(httpClientFactory, config);
-        });
-    })
-    .Build();
+            logger.LogError(ex, "An error occurred while running the bot");
+        }
+    }
 
-var botConfig = host.Services.GetRequiredService<BotConfig>();
-if (botConfig == null)
-{
-    Console.WriteLine("Failed to load configuration.");
-    return;
-}
+    private static IHostBuilder CreateHostBuilder(string[] args) =>
+        Host.CreateDefaultBuilder(args)
+            .ConfigureServices((hostContext, services) =>
+            {
+                // Configure HTTP client
+                services.AddHttpClient<IAuthService, AuthService>();
 
-Console.WriteLine($"Starting authentication process for bot: {botConfig.Email}");
+                // Add services
+                services.AddSingleton<IAuthService, AuthService>();
+                services.AddSingleton<IPokerGameService, PokerGameService>();
+                services.AddSingleton<IWebSocketClientService, WebSocketClientService>();
 
-try
-{
-    Console.WriteLine("Authenticating...");
-    // Fetch player info
-    var authService = host.Services.GetRequiredService<IAuthService>();
-    var token = await authService.AuthenticateAsync(botConfig.Email, botConfig.Password);
-    var player = await authService.GetPlayerAsync();
-
-    Console.WriteLine($"Authentication successful. Player ID: {player.Id}, Chips: {player.Chips}");
-    Console.WriteLine($"--------------------------------");
-
-    Console.WriteLine($"Connecting to game server: {botConfig.WebSocketUrl}");
-
-    // Initialize WebSocket client with authenticated player info
-    using var client = new WebSocketClientService(botConfig.WebSocketUrl, token, player);
-    await client.StartAsync();
-    Console.WriteLine("Connected to WebSocket server");
-    Console.WriteLine("--------------------------------");
-    await client.JoinGameAsync(botConfig.RoomId);
-    Console.WriteLine($"Joined room: {botConfig.RoomId}");
-
-    // Keep the application running
-    await host.RunAsync();
-}
-catch (Exception ex)
-{
-    Console.WriteLine($"Error: {ex.Message}");
+                // Configure logging
+                services.AddLogging(builder =>
+                {
+                    builder.AddConsole();
+                    builder.SetMinimumLevel(LogLevel.Error);
+                });
+            })
+            .ConfigureAppConfiguration((hostContext, config) =>
+            {
+                config.SetBasePath(Directory.GetCurrentDirectory())
+                    .AddJsonFile("appsettings.json", optional: false)
+                    .AddJsonFile($"appsettings.{hostContext.HostingEnvironment.EnvironmentName}.json", optional: true)
+                    .AddEnvironmentVariables()
+                    .AddCommandLine(args);
+            });
 }

@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"context"
+
 	"github.com/ahmetkoprulu/rtrp/internal/services"
 	"github.com/ahmetkoprulu/rtrp/models"
 	"github.com/gin-gonic/gin"
@@ -31,7 +33,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	err := h.authService.Register(c.Request.Context(), req)
+	err := h.authService.Register(context.Background(), req)
 	if err != nil {
 		BadRequest(c, err.Error())
 		return
@@ -46,7 +48,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	client, err := h.authService.Login(c.Request.Context(), req)
+	client, err := h.authService.Login(context.Background(), req)
 	if err != nil {
 		BadRequest(c, err.Error())
 		return

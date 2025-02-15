@@ -3,57 +3,76 @@ package services
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/ahmetkoprulu/rtrp/common/data"
 	"github.com/ahmetkoprulu/rtrp/common/utils"
+	"github.com/ahmetkoprulu/rtrp/internal/services/auth"
 	"github.com/ahmetkoprulu/rtrp/models"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
-	"golang.org/x/exp/rand"
 )
 
 type AuthService struct {
-	db *data.PgDbContext
+	db        *data.PgDbContext
+	userStore auth.UserStore
+	providers map[models.SocialNetwork]auth.AuthProvider
 }
 
 func NewAuthService(db *data.PgDbContext) *AuthService {
-	return &AuthService{db: db}
+	userStore := &auth.PgUserStore{Db: db}
+	service := &AuthService{
+		db:        db,
+		userStore: userStore,
+		providers: make(map[models.SocialNetwork]auth.AuthProvider),
+	}
+
+	service.providers[models.Guest] = auth.NewGuestAuthProvider(userStore)
+	service.providers[models.Email] = auth.NewEmailAuthProvider(userStore)
+	service.providers[models.Google] = auth.NewGoogleAuthProvider(userStore)
+	service.providers[models.Facebook] = auth.NewFacebookAuthProvider(userStore)
+
+	return service
 }
 
 func (s *AuthService) Login(ctx context.Context, request *models.LoginRequest) (*models.LoginResponse, error) {
-	user, err := s.getUserByEmail(ctx, request.Email)
+	provider, exists := s.providers[request.Provider]
+	if !exists {
+		return nil, fmt.Errorf("unsupported authentication provider")
+	}
+
+	if err := provider.ValidateRequest(request); err != nil {
+		return nil, err
+	}
+
+	user, err := provider.Authenticate(ctx, request)
 	if err != nil {
 		return nil, err
 	}
 
-	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(request.Password))
-	if err != nil {
-		return nil, err
-	}
-
-	player, err := s.getPlayerByUserID(ctx, user.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	token, err := utils.GenerateJWTTokenWithClaims(utils.Claims{UserID: user.ID, PlayerID: player.ID})
+	// Generate JWT token
+	token, err := utils.GenerateJWTTokenWithClaims(utils.Claims{UserID: user.ID, PlayerID: user.Player.ID})
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)
 	}
 
 	return &models.LoginResponse{
-		User: models.UserPlayer{
-			ID:     user.ID,
-			Player: *player,
-		},
+		User:  *user,
 		Token: token,
 	}, nil
 }
 
 func (s *AuthService) Register(ctx context.Context, request *models.RegisterRequest) error {
-	user, err := s.getUserByEmail(ctx, request.Email)
+	loginReq := &models.LoginRequest{
+		Provider:   models.Email,
+		Identifier: request.Identifier,
+		Secret:     request.Secret,
+	}
+
+	if err := s.providers[models.Email].ValidateRequest(loginReq); err != nil {
+		return err
+	}
+
+	user, err := s.userStore.GetUserByIdentifier(ctx, models.Email, request.Identifier)
 	if err != nil {
 		return err
 	}
@@ -62,146 +81,26 @@ func (s *AuthService) Register(ctx context.Context, request *models.RegisterRequ
 		return fmt.Errorf("user already exists")
 	}
 
-	return s.createUser(ctx, request)
-}
-
-func (s *AuthService) createUser(ctx context.Context, request *models.RegisterRequest) error {
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(request.Password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(request.Secret), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
 
-	user := &models.User{
-		ID:       uuid.New().String(),
-		Email:    request.Email,
-		Password: string(hashedPassword),
-	}
+	user = models.NewEmailUser(request.Identifier, string(hashedPassword))
+	user.ID = uuid.New().String()
 
-	var query = `
-			INSERT INTO users (id, email, password_hash)
-			VALUES ($1, $2, $3)
-			RETURNING id
-		`
-
-	_, err = s.db.Exec(ctx, query, user.ID, user.Email, user.Password)
+	err = s.userStore.CreateUser(ctx, user)
 	if err != nil {
 		return err
 	}
 
-	_, err = s.createPlayer(ctx, user)
+	player := models.NewPlayer(user.ID, "", "", 1000000)
+	player, err = s.userStore.CreatePlayer(ctx, player)
 	if err != nil {
 		return err
 	}
+
+	user.Player = player
 
 	return nil
 }
-
-func (s *AuthService) createPlayer(ctx context.Context, user *models.User) (*models.Player, error) {
-	maxRetries := 10
-	var id string
-	for i := 0; i < maxRetries; i++ {
-		id = generateUniqueID()
-
-		var exists bool
-		err := s.db.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM players WHERE id = $1)", id).Scan(&exists) // Check if ID exists
-		if err != nil {
-			return nil, fmt.Errorf("failed to check player id existence: %w", err)
-		} else if exists {
-			continue // Try another ID if this one exists
-		}
-
-		break
-	}
-
-	if id == "" {
-		id = uuid.New().String()
-	}
-
-	player := &models.Player{
-		ID:     id,
-		UserID: user.ID,
-		Chips:  1000000,
-	}
-
-	query := `
-		INSERT INTO players (id, user_id, chips)
-		VALUES ($1, $2, $3)
-	`
-
-	_, err := s.db.Exec(ctx, query, player.ID, player.UserID, player.Chips)
-	if err != nil {
-		return nil, err
-	}
-
-	return player, nil
-}
-
-func (s *AuthService) getUserByEmail(ctx context.Context, email string) (*models.User, error) {
-	var query = `
-		SELECT id, email, password_hash
-		FROM users
-		WHERE email = $1
-	`
-
-	var user models.User
-	err := s.db.QueryRow(ctx, query, email).Scan(&user.ID, &user.Email, &user.Password)
-	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	return &user, nil
-}
-
-func (s *AuthService) getPlayerByUserID(ctx context.Context, userID string) (*models.Player, error) {
-	var query = `
-		SELECT id, user_id, chips
-		FROM players
-		WHERE user_id = $1
-	`
-
-	var player models.Player
-	err := s.db.QueryRow(ctx, query, userID).Scan(&player.ID, &player.UserID, &player.Chips)
-	if err != nil {
-		return nil, err
-	}
-
-	return &player, nil
-}
-
-func generateUniqueID() string {
-	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	rand.Seed(uint64(time.Now().UnixNano()))
-	length := 6 + rand.Intn(4)
-	b := make([]byte, length)
-	for i := range b {
-		b[i] = charset[rand.Intn(len(charset))]
-	}
-	return string(b)
-}
-
-// err = s.db.WithTransaction(ctx, func(tx data.QueryRunner) error {
-// 	var query = `
-// 		INSERT INTO users (id, email, password_hash)
-// 		VALUES ($1, $2, $3)
-// 		RETURNING id
-// 	`
-
-// 	_, err = tx.Exec(ctx, query, user.ID, user.Email, user.Password)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	query = `
-// 		INSERT INTO players (id, user_id, chips)
-// 		VALUES ($1, $2, $3)
-// 	`
-// 	_, err = tx.Exec(ctx, query, player.ID, player.UserID, player.Chips)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	return nil
-// })

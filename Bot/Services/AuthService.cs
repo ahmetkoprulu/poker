@@ -2,16 +2,17 @@ using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using Bot.Config;
 using Bot.Models;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Bot.Services;
 
-public class AuthService(IHttpClientFactory httpClientFactory, BotConfig config) : IAuthService
+public class AuthService(IHttpClientFactory httpClientFactory, IConfiguration configuration) : IAuthService
 {
-    private readonly string _baseUrl = config.ApiBaseUrl;
+    private readonly string _baseUrl = configuration["ApiBaseUrl"];
     private string? _token;
 
-    public async Task<string> AuthenticateAsync(string email, string password)
+    public async Task<LoginResponse> LoginAsync(string email, string password)
     {
         var client = httpClientFactory.CreateClient();
         client.BaseAddress = new Uri(_baseUrl);
@@ -31,10 +32,10 @@ public class AuthService(IHttpClientFactory httpClientFactory, BotConfig config)
         var loginResult = await loginResponse.Content.ReadFromJsonAsync<ApiResponse<LoginResponse>>() ?? throw new Exception("Login result is null");
         _token = loginResult?.Data?.Token ?? throw new Exception("Token is Empty");
 
-        return _token;
+        return loginResult.Data;
     }
 
-    public async Task<UserPlayer> GetPlayerAsync()
+    public async Task<Player> GetPlayerAsync(string token)
     {
         if (string.IsNullOrEmpty(_token)) throw new Exception("Token is not set");
 
@@ -49,7 +50,7 @@ public class AuthService(IHttpClientFactory httpClientFactory, BotConfig config)
             throw new Exception($"Failed to get player info: {error}");
         }
 
-        var result = await playerResponse.Content.ReadFromJsonAsync<ApiResponse<UserPlayer>>() ?? throw new Exception("Player info is null");
+        var result = await playerResponse.Content.ReadFromJsonAsync<ApiResponse<Player>>() ?? throw new Exception("Player info is null");
         return result.Data;
     }
 }

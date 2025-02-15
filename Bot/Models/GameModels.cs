@@ -30,17 +30,33 @@ public class Card
     [JsonPropertyName("hidden")] public bool Hidden { get; set; }
 }
 
-public class Player
+public class GamePlayer
 {
     [JsonPropertyName("id")] public string Id { get; set; }
     [JsonPropertyName("name")] public string Name { get; set; }
-    [JsonPropertyName("cards")] public List<Card> Cards { get; set; }
+    [JsonPropertyName("cards")] public List<Card> Cards { get; set; } = new();
     [JsonPropertyName("chips")] public int Chips { get; set; }
     [JsonPropertyName("bet")] public int Bet { get; set; }
     [JsonPropertyName("position")] public int Position { get; set; }
     [JsonPropertyName("active")] public bool Active { get; set; }
     [JsonPropertyName("folded")] public bool Folded { get; set; }
     [JsonPropertyName("lastAction")] public string LastAction { get; set; }
+}
+
+public class Game
+{
+    [JsonPropertyName("id")] public string Id { get; set; }
+    [JsonPropertyName("status")] public string Status { get; set; }
+    [JsonPropertyName("players")] public List<GamePlayer> Players { get; set; } = new();
+    [JsonPropertyName("communityCards")] public List<Card> CommunityCards { get; set; } = new();
+    [JsonPropertyName("pot")] public int Pot { get; set; }
+    [JsonPropertyName("currentBet")] public int CurrentBet { get; set; }
+    [JsonPropertyName("dealerPosition")] public int DealerPosition { get; set; }
+    [JsonPropertyName("currentTurn")] public int CurrentTurn { get; set; }
+    [JsonPropertyName("minBet")] public int MinBet { get; set; }
+    [JsonPropertyName("maxPlayers")] public int MaxPlayers { get; set; }
+    [JsonPropertyName("createdAt")] public DateTime CreatedAt { get; set; }
+    [JsonPropertyName("updatedAt")] public DateTime UpdatedAt { get; set; }
 }
 
 public class Room
@@ -53,18 +69,4 @@ public class Room
     [JsonPropertyName("minBet")] public int MinBet { get; set; }
     [JsonPropertyName("createdAt")] public DateTime CreatedAt { get; set; }
     [JsonPropertyName("updatedAt")] public DateTime UpdatedAt { get; set; }
-}
-
-public class Game
-{
-    [JsonPropertyName("id")] public string Id { get; set; }
-    [JsonPropertyName("status")] public string Status { get; set; }
-    [JsonPropertyName("players")] public List<Player> Players { get; set; }
-    [JsonPropertyName("communityCards")] public List<Card> CommunityCards { get; set; }
-    [JsonPropertyName("pot")] public int Pot { get; set; }
-    [JsonPropertyName("currentBet")] public int CurrentBet { get; set; }
-    [JsonPropertyName("dealerPosition")] public int DealerPosition { get; set; }
-    [JsonPropertyName("currentTurn")] public int CurrentTurn { get; set; }
-    [JsonPropertyName("minBet")] public int MinBet { get; set; }
-    [JsonPropertyName("maxPlayers")] public int MaxPlayers { get; set; }
 }

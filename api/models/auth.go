@@ -1,18 +1,20 @@
 package models
 
 type LoginRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"`
+	Provider   SocialNetwork `json:"provider"`
+	Identifier string        `json:"identifier" binding:"required"` // email for Email provider, token for social providers
+	Secret     string        `json:"secret"`                        // only required for Email provider
 }
 
 type LoginResponse struct {
-	User  UserPlayer `json:"user"`
-	Token string     `json:"token"`
+	User  User   `json:"user"`
+	Token string `json:"token"`
 }
 
 type RegisterRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"`
+	Provider   SocialNetwork `json:"provider" binding:"required"`
+	Identifier string        `json:"identifier" binding:"required"` // email for Email provider, token for social providers
+	Secret     string        `json:"secret"`                        // only required for Email provider
 }
 
 type RegisterResponse struct {

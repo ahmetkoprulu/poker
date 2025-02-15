@@ -11,23 +11,27 @@ import (
 
 // GameManager handles all active games and their states
 type GameManager struct {
-	games map[string]*models.Game
-	mu    sync.RWMutex
+	games         map[string]*models.Game
+	pokerManagers map[string]*PokerManager
+	mu            sync.RWMutex
 }
 
 // NewGameManager creates a new game manager instance
 func NewGameManager() *GameManager {
 	return &GameManager{
-		games: make(map[string]*models.Game),
+		games:         make(map[string]*models.Game),
+		pokerManagers: make(map[string]*PokerManager),
 	}
 }
 
 // CreateGame creates a new game instance
 func (gm *GameManager) CreateGame(maxPlayers, minBet int) *models.Game {
 	game := models.NewGame(maxPlayers, minBet)
+	pokerManager := NewPokerManager(game)
 
 	gm.mu.Lock()
 	gm.games[game.ID] = game
+	gm.pokerManagers[game.ID] = pokerManager
 	gm.mu.Unlock()
 
 	return game
@@ -40,8 +44,11 @@ func (gm *GameManager) RegisterGame(game *models.Game) {
 		return
 	}
 
+	pokerManager := NewPokerManager(game)
+
 	gm.mu.Lock()
 	gm.games[game.ID] = game
+	gm.pokerManagers[game.ID] = pokerManager
 	gm.mu.Unlock()
 
 	log.Printf("[INFO] Game registered - GameID: %s, MaxPlayers: %d, MinBet: %d",
@@ -146,27 +153,64 @@ func (gm *GameManager) StartGame(gameID string) error {
 
 	// Initialize game state
 	game.Status = models.GameStatusStarted
-	game.DealerPosition = 0 // Start with first player as dealer
-	game.CurrentTurn = 1    // Start with player after dealer
-	game.CurrentBet = 0
-	game.Pot = 0
 
-	// Reset player states
-	for _, player := range game.Players {
-		player.Bet = 0
-		player.Folded = false
-		player.Active = true
-		player.LastAction = ""
+	// Start the first hand
+	pokerManager := gm.pokerManagers[gameID]
+	if err := pokerManager.StartNewHand(); err != nil {
+		log.Printf("[ERROR] Failed to start first hand - GameID: %s, Error: %s", gameID, err)
+		return fmt.Errorf("failed to start first hand: %w", err)
 	}
 
-	log.Printf("[INFO] Game started successfully - GameID: %s, PlayerCount: %d, Dealer: %d, FirstToAct: %d",
-		gameID, len(game.Players), game.DealerPosition, game.CurrentTurn)
+	log.Printf("[INFO] Game started successfully - GameID: %s, PlayerCount: %d",
+		gameID, len(game.Players))
 	return nil
+}
+
+// ProcessAction processes a player's action in a game
+func (gm *GameManager) ProcessAction(gameID string, action models.GameAction) error {
+	game, err := gm.GetGame(gameID)
+	if err != nil {
+		return err
+	}
+
+	if game.Status != models.GameStatusStarted {
+		return errors.New("game not in progress")
+	}
+
+	pokerManager := gm.pokerManagers[gameID]
+	return pokerManager.ProcessAction(action)
+}
+
+// DealNextRound deals the next round of community cards
+func (gm *GameManager) DealNextRound(gameID string) error {
+	game, err := gm.GetGame(gameID)
+	if err != nil {
+		return err
+	}
+
+	if game.Status != models.GameStatusStarted {
+		return errors.New("game not in progress")
+	}
+
+	pokerManager := gm.pokerManagers[gameID]
+	communityCards := len(game.CommunityCards)
+
+	switch communityCards {
+	case 0:
+		return pokerManager.DealFlop()
+	case 3:
+		return pokerManager.DealTurn()
+	case 4:
+		return pokerManager.DealRiver()
+	default:
+		return fmt.Errorf("invalid number of community cards: %d", communityCards)
+	}
 }
 
 // RemoveGame removes a game from the manager
 func (gm *GameManager) RemoveGame(gameID string) {
 	gm.mu.Lock()
 	delete(gm.games, gameID)
+	delete(gm.pokerManagers, gameID)
 	gm.mu.Unlock()
 }

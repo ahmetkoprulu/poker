@@ -1,194 +1,218 @@
 using System.Net.WebSockets;
+using System.Text;
 using System.Text.Json;
 using Bot.Models;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Serialization;
-using Websocket.Client;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace Bot.Services;
 
 public class WebSocketClientService : IWebSocketClientService
 {
-    private readonly WebsocketClient _client;
-    private readonly UserPlayer _player;
-    private readonly string _playerId;
-    private Game _currentGameState;
-    private string _currentRoomId;
-    private string _currentGameId;
-    private readonly JsonSerializerSettings _jsonOptions;
+    private readonly IConfiguration _configuration;
+    private readonly ILogger<WebSocketClientService> _logger;
+    private readonly IPokerGameService _pokerGameService;
+    private readonly IAuthService _authService;
+    private readonly ClientWebSocket _webSocket;
+    private readonly CancellationTokenSource _cancellationTokenSource;
+    private Game _currentGame;
+    private string _playerId;
+    private string _token;
 
-    public WebSocketClientService(string serverUrl, string token, UserPlayer userPlayer)
+    public event Func<Game, Task> OnGameStateChanged;
+    public event Func<string, Task> OnError;
+
+    public WebSocketClientService(
+        IConfiguration configuration,
+        ILogger<WebSocketClientService> logger,
+        IPokerGameService pokerGameService,
+        IAuthService authService)
     {
-        _player = userPlayer;
-        _playerId = userPlayer.Id;
-        _jsonOptions = new JsonSerializerSettings
-        {
-            ContractResolver = new DefaultContractResolver
-            {
-                NamingStrategy = new CamelCaseNamingStrategy()
-            }
-        };
-
-        var url = new Uri(serverUrl);
-        var factory = new Func<ClientWebSocket>(() =>
-        {
-            var client = new ClientWebSocket();
-            client.Options.SetRequestHeader("Authorization", $"Bearer {token}");
-            return client;
-        });
-
-        _client = new WebsocketClient(url, factory);
-        _client.MessageReceived.Subscribe(msg =>
-        {
-            try
-            {
-                HandleMessage(msg.Text);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error handling message: {ex.Message}");
-            }
-        });
+        _configuration = configuration;
+        _logger = logger;
+        _pokerGameService = pokerGameService;
+        _authService = authService;
+        _webSocket = new ClientWebSocket();
+        _cancellationTokenSource = new CancellationTokenSource();
     }
 
     public async Task StartAsync()
     {
-        await _client.Start();
+        try
+        {
+            // Authenticate first
+            var email = _configuration["Email"] ?? throw new Exception("Email not configured");
+            var password = _configuration["Password"] ?? throw new Exception("Password not configured");
+
+            _logger.LogInformation("Authenticating with email {Email}", email);
+            var loginResponse = await _authService.LoginAsync(email, password);
+            _token = loginResponse.Token;
+            _playerId = loginResponse.Player.Id;
+
+            // Get player details
+            var player = await _authService.GetPlayerAsync(_token);
+            _logger.LogInformation("Authenticated as player {PlayerName} with {Chips} chips",
+                player.Name, player.Chips);
+
+            // Connect to WebSocket with auth token
+            var wsUrl = _configuration["WebSocketUrl"] ?? "ws://localhost:8080/ws";
+            _webSocket.Options.SetRequestHeader("Authorization", $"Bearer {_token}");
+            await _webSocket.ConnectAsync(new Uri(wsUrl), _cancellationTokenSource.Token);
+            _logger.LogInformation("Connected to WebSocket server");
+
+            // Start receiving messages
+            _ = ReceiveMessagesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to start WebSocket client");
+            throw;
+        }
     }
 
     public async Task JoinGameAsync(string roomId)
     {
-        _currentRoomId = roomId;
         var message = new Message
         {
             Type = MessageType.JoinGame,
             RoomId = roomId,
-            PlayerId = _playerId,
-            Data = new { }
+            PlayerId = _playerId
         };
 
         await SendMessageAsync(message);
     }
 
-    public async Task SendGameActionAsync(string action)
+    public async Task LeaveGameAsync(string gameId)
     {
-        if (string.IsNullOrEmpty(_currentGameId))
+        var message = new Message
         {
-            Console.WriteLine("No active game.");
+            Type = MessageType.LeaveGame,
+            GameId = gameId,
+            PlayerId = _playerId
+        };
+
+        await SendMessageAsync(message);
+    }
+
+    public async Task SendGameActionAsync(GameAction action)
+    {
+        if (_currentGame == null)
+        {
+            _logger.LogWarning("Cannot send game action: no active game");
             return;
         }
 
         var message = new Message
         {
             Type = MessageType.GameAction,
-            GameId = _currentGameId,
-            RoomId = _currentRoomId,
+            GameId = _currentGame.Id,
             PlayerId = _playerId,
-            Data = new { action }
+            Data = action
         };
 
         await SendMessageAsync(message);
+    }
+
+    public Task<Game> GetGameStateAsync(string gameId)
+    {
+        return Task.FromResult(_currentGame);
+    }
+
+    private async Task ReceiveMessagesAsync()
+    {
+        var buffer = new byte[4096];
+
+        try
+        {
+            while (_webSocket.State == WebSocketState.Open)
+            {
+                var result = await _webSocket.ReceiveAsync(
+                    new ArraySegment<byte>(buffer), _cancellationTokenSource.Token);
+
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty,
+                        _cancellationTokenSource.Token);
+                    break;
+                }
+
+                var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                await HandleMessageAsync(message);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in WebSocket receive loop");
+            if (OnError != null)
+                await OnError.Invoke(ex.Message);
+        }
+    }
+
+    private async Task HandleMessageAsync(string messageJson)
+    {
+        try
+        {
+            var message = JsonSerializer.Deserialize<Message>(messageJson);
+            switch (message.Type)
+            {
+                case MessageType.GameState:
+                    var room = JsonSerializer.Deserialize<Room>(message.Data.ToString());
+                    if (room?.Game != null)
+                    {
+                        _currentGame = room.Game;
+                        if (OnGameStateChanged != null)
+                            await OnGameStateChanged.Invoke(_currentGame);
+
+                        // If it's our turn and the game is started, determine and send the next action
+                        if (_currentGame.Status == "started" && _pokerGameService.IsPlayerTurn(_currentGame, _playerId))
+                        {
+                            var action = await _pokerGameService.DetermineNextAction(_currentGame, _playerId);
+                            if (action != null)
+                                await SendGameActionAsync(action);
+                        }
+                    }
+                    break;
+
+                case MessageType.Error:
+                    var error = message.Data.ToString();
+                    _logger.LogError("Received error: {Error}", error);
+                    if (OnError != null)
+                        await OnError.Invoke(error);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error handling message: {Message}", messageJson);
+            if (OnError != null)
+                await OnError.Invoke(ex.Message);
+        }
     }
 
     private async Task SendMessageAsync(Message message)
     {
-        var json = JsonConvert.SerializeObject(message, _jsonOptions);
-        Console.WriteLine($"Sending message: {json}");
-        await _client.SendInstant(json);
-    }
-
-    private void HandleMessage(string messageJson)
-    {
-        Console.WriteLine($"Received message: {messageJson}");
-        var message = JsonConvert.DeserializeObject<Message>(messageJson, _jsonOptions) ?? throw new Exception("Message is null");
-
-        switch (message.Type)
+        try
         {
-            case MessageType.GameState:
-                var gameStateJson = JsonConvert.SerializeObject(message.Data);
-                var data = JsonConvert.DeserializeObject<Room>(gameStateJson, _jsonOptions) ?? throw new Exception("Game state is null");
-                _currentGameState = data.Game;
-                _currentGameId = message.GameId;
-
-                // If we have 2 or more players and game is in waiting state, start the game
-                if (_currentGameState.Players.Count >= 2 && _currentGameState.Status == "waiting")
-                {
-                    Console.WriteLine("Enough players to start the game. Sending start game message...");
-                    _ = StartGameAsync();
-                }
-
-                HandleGameState(_currentGameState);
-                break;
-
-            case MessageType.Error:
-                Console.WriteLine($"Error: {message.Data}");
-                break;
-
-            default:
-                Console.WriteLine($"Unhandled message type: {message.Type}");
-                break;
+            var json = JsonSerializer.Serialize(message);
+            var buffer = Encoding.UTF8.GetBytes(json);
+            await _webSocket.SendAsync(
+                new ArraySegment<byte>(buffer),
+                WebSocketMessageType.Text,
+                true,
+                _cancellationTokenSource.Token);
         }
-    }
-
-    private void HandleGameState(Game gameState)
-    {
-        Console.WriteLine($"\nGame State Update:");
-        Console.WriteLine($"Game Status: {gameState.Status}");
-        Console.WriteLine($"Total Players: {gameState.Players.Count}");
-        Console.WriteLine($"Current Turn: {gameState.CurrentTurn}");
-        Console.WriteLine($"Current Bet: {gameState.CurrentBet}");
-        Console.WriteLine($"Pot: {gameState.Pot}");
-        Console.WriteLine($"Dealer Position: {gameState.DealerPosition}");
-
-        var currentPlayer = gameState.Players.FirstOrDefault(p => p.Id == _playerId);
-        if (currentPlayer == null)
+        catch (Exception ex)
         {
-            Console.WriteLine($"Warning: Could not find current player (ID: {_playerId}) in the game");
-            return;
+            _logger.LogError(ex, "Error sending message");
+            if (OnError != null)
+                await OnError.Invoke(ex.Message);
         }
-
-        Console.WriteLine($"\nMy Player Info:");
-        Console.WriteLine($"Position: {currentPlayer.Position}");
-        Console.WriteLine($"Active: {currentPlayer.Active}");
-        Console.WriteLine($"Folded: {currentPlayer.Folded}");
-        Console.WriteLine($"Current Bet: {currentPlayer.Bet}");
-        Console.WriteLine($"Chips: {currentPlayer.Chips}");
-
-        if (gameState.Status == "started" && gameState.CurrentTurn == currentPlayer.Position)
-        {
-            var actionNeeded = gameState.CurrentBet > currentPlayer.Bet ? "call" : "check";
-            Console.WriteLine($"\nIt's my turn! Taking action: {actionNeeded}");
-            Console.WriteLine($"Current bet: {gameState.CurrentBet}, My bet: {currentPlayer.Bet}");
-            _ = SendGameActionAsync(actionNeeded);
-        }
-        else
-        {
-            Console.WriteLine($"\nNot my turn. Current turn position: {gameState.CurrentTurn}, My position: {currentPlayer.Position}");
-        }
-    }
-
-    public async Task StartGameAsync()
-    {
-        if (string.IsNullOrEmpty(_currentGameId))
-        {
-            Console.WriteLine("No active game to start.");
-            return;
-        }
-
-        var message = new Message
-        {
-            Type = MessageType.StartGame,
-            GameId = _currentGameId,
-            RoomId = _currentRoomId,
-            PlayerId = _playerId,
-            Data = new { }
-        };
-
-        await SendMessageAsync(message);
     }
 
     public void Dispose()
     {
-        _client?.Dispose();
+        _cancellationTokenSource.Cancel();
+        _webSocket.Dispose();
+        _cancellationTokenSource.Dispose();
     }
 }
