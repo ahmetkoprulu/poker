@@ -12,6 +12,11 @@ type HttpContext struct {
 	*gin.Context
 }
 
+// ErrorResponse represents an error response from the API
+type ErrorResponse struct {
+	Error string `json:"error" example:"Error message describing what went wrong"`
+}
+
 // Data related functions
 func BindModel[T any](ctx *gin.Context) *T {
 	var model T
@@ -55,33 +60,17 @@ func Ok(ctx *gin.Context, data any) {
 }
 
 func NotFound(ctx *gin.Context, message string) {
-	ctx.JSON(200, models.ApiResponse[any]{
-		Success: false,
-		Status:  404,
-		Message: message,
-	})
+	ctx.JSON(404, ErrorResponse{Error: message})
 }
 
 func BadRequest(ctx *gin.Context, message string) {
-	ctx.JSON(200, models.ApiResponse[any]{
-		Success: false,
-		Status:  400,
-		Message: message,
-	})
+	ctx.JSON(400, ErrorResponse{Error: message})
 }
 
 func InternalServerError(ctx *gin.Context, message string) {
-	ctx.JSON(200, models.ApiResponse[any]{
-		Success: false,
-		Status:  500,
-		Message: message,
-	})
+	ctx.JSON(500, ErrorResponse{Error: message})
 }
 
 func Unauthorized(ctx *gin.Context, message string) {
-	ctx.JSON(200, models.ApiResponse[any]{
-		Success: false,
-		Status:  401,
-		Message: message,
-	})
+	ctx.JSON(401, ErrorResponse{Error: message})
 }

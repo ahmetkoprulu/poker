@@ -46,13 +46,13 @@ func (s *PlayerService) IncrementChips(ctx context.Context, id string, amount in
 
 func (s *PlayerService) getPlayerByID(ctx context.Context, playerID string) (*models.Player, error) {
 	var query = `
-		SELECT id, user_id, chips
+		SELECT id, user_id, username, profile_pic_url, chips
 		FROM players
 		WHERE id = $1
 	`
 
 	var player models.Player
-	err := s.db.QueryRow(ctx, query, playerID).Scan(&player.ID, &player.UserID, &player.Chips)
+	err := s.db.QueryRow(ctx, query, playerID).Scan(&player.ID, &player.UserID, &player.Username, &player.ProfilePicURL, &player.Chips)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, nil

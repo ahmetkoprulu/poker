@@ -1,0 +1,690 @@
+basePath: /api/v1
+definitions:
+  github_com_ahmetkoprulu_rtrp_models.ApiResponse-models_UserPlayer:
+    properties:
+      data:
+        $ref: '#/definitions/models.UserPlayer'
+      message:
+        type: string
+      status:
+        type: integer
+      success:
+        type: boolean
+    type: object
+  github_com_ahmetkoprulu_rtrp_models.ApiResponse-string:
+    properties:
+      data:
+        type: string
+      message:
+        type: string
+      status:
+        type: integer
+      success:
+        type: boolean
+    type: object
+  internal_api_handlers.ErrorResponse:
+    properties:
+      error:
+        example: Error message describing what went wrong
+        type: string
+    type: object
+  internal_api_handlers.HealthResponse:
+    properties:
+      status:
+        type: string
+    type: object
+  internal_api_handlers.IncrementChipsRequest:
+    properties:
+      amount:
+        description: Amount of chips to increment (can be negative for decrement)
+        example: 1000
+        type: integer
+      id:
+        description: Player ID
+        example: 123e4567-e89b-12d3-a456-426614174000
+        type: string
+    type: object
+  models.ActiveEventSchedule:
+    properties:
+      assets:
+        items:
+          $ref: '#/definitions/models.Asset'
+        type: array
+      end_time:
+        type: string
+      event_id:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      start_time:
+        type: string
+      type:
+        allOf:
+        - $ref: '#/definitions/models.EventType'
+        description: Event
+    type: object
+  models.Asset:
+    properties:
+      name:
+        type: string
+      type:
+        $ref: '#/definitions/models.AssetType'
+      url:
+        type: string
+    type: object
+  models.AssetType:
+    enum:
+    - 1
+    - 2
+    - 3
+    type: integer
+    x-enum-varnames:
+    - AssetTypeImage
+    - AssetTypeVideo
+    - AssetTypeAudio
+  models.Event:
+    properties:
+      assets:
+        items:
+          $ref: '#/definitions/models.Asset'
+        type: array
+      config:
+        additionalProperties: true
+        type: object
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      type:
+        $ref: '#/definitions/models.EventType'
+      updated_at:
+        type: string
+    type: object
+  models.EventPlayResult:
+    properties:
+      data: {}
+      player_event:
+        $ref: '#/definitions/models.PlayerEvent'
+      rewards:
+        items:
+          $ref: '#/definitions/models.EventReward'
+        type: array
+    type: object
+  models.EventReward:
+    properties:
+      type:
+        $ref: '#/definitions/models.ProductType'
+      value:
+        $ref: '#/definitions/models.RewardValue'
+    type: object
+  models.EventSchedule:
+    properties:
+      created_at:
+        type: string
+      end_time:
+        type: string
+      event:
+        $ref: '#/definitions/models.Event'
+      event_id:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      start_time:
+        type: string
+    type: object
+  models.EventType:
+    enum:
+    - 1
+    - 2
+    - 3
+    type: integer
+    x-enum-varnames:
+    - EventTypeSlotMachine
+    - EventTypeDiceGame
+    - EventTypePathGame
+  models.LoginRequest:
+    properties:
+      identifier:
+        description: email for Email provider, token for social providers
+        type: string
+      provider:
+        $ref: '#/definitions/models.SocialNetwork'
+      secret:
+        description: only required for Email provider
+        type: string
+    required:
+    - identifier
+    type: object
+  models.PlayEventRequest:
+    properties:
+      play_data:
+        additionalProperties: true
+        type: object
+    type: object
+  models.Player:
+    properties:
+      chips:
+        type: integer
+      id:
+        type: string
+      profile_pic_url:
+        type: string
+      username:
+        type: string
+    type: object
+  models.PlayerEvent:
+    properties:
+      attempts:
+        type: integer
+      created_at:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      last_play:
+        type: string
+      player_id:
+        type: string
+      schedule_id:
+        type: string
+      score:
+        type: integer
+      state:
+        additionalProperties: true
+        type: object
+      tickets_left:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  models.ProductType:
+    enum:
+    - 1
+    - 2
+    type: integer
+    x-enum-varnames:
+    - ProductTypeChips
+    - ProductTypeGold
+  models.RegisterRequest:
+    properties:
+      identifier:
+        description: email for Email provider, token for social providers
+        type: string
+      provider:
+        $ref: '#/definitions/models.SocialNetwork'
+      secret:
+        description: only required for Email provider
+        type: string
+    required:
+    - identifier
+    - provider
+    type: object
+  models.RewardValue:
+    properties:
+      amount:
+        type: integer
+    type: object
+  models.SocialNetwork:
+    enum:
+    - 0
+    - 1
+    - 2
+    - 3
+    - 4
+    type: integer
+    x-enum-varnames:
+    - Guest
+    - Email
+    - Google
+    - Facebook
+    - Apple
+  models.UserPlayer:
+    properties:
+      id:
+        type: string
+      player:
+        $ref: '#/definitions/models.Player'
+      provider:
+        $ref: '#/definitions/models.SocialNetwork'
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@swagger.io
+    name: API Support
+    url: http://www.swagger.io/support
+  description: API Server for RTRP application
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: RTRP API
+  version: "1.0"
+paths:
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: 'Kullanici girisi yapmak icin kullanilir. Provider: 0: Guest, 1
+        Email, 2 Google'
+      parameters:
+      - description: User login credentials
+        in: body
+        name: credentials
+        required: true
+        schema:
+          $ref: '#/definitions/models.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Login successful
+          schema:
+            $ref: '#/definitions/github_com_ahmetkoprulu_rtrp_models.ApiResponse-models_UserPlayer'
+        "400":
+          description: Invalid credentials
+          schema:
+            $ref: '#/definitions/internal_api_handlers.ErrorResponse'
+      summary: Login user
+      tags:
+      - auth
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Email ve Parola ile kayit olmak icin kullanilir. Provider 1 Email
+        anlamina gelir. Identifier alanina email adresi girilir. Secret alanina parola
+        girilir.
+      parameters:
+      - description: User registration details
+        in: body
+        name: user
+        required: true
+        schema:
+          $ref: '#/definitions/models.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User created successfully
+          schema:
+            $ref: '#/definitions/github_com_ahmetkoprulu_rtrp_models.ApiResponse-string'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_handlers.ErrorResponse'
+      summary: Register a new user
+      tags:
+      - auth
+  /events:
+    get:
+      description: Tum eventleri listelemek icin kullanilir.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Event'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_handlers.ErrorResponse'
+      summary: List all events
+      tags:
+      - events
+    post:
+      consumes:
+      - application/json
+      description: Event olusturmak icin kullanilir.
+      parameters:
+      - description: Event object to create
+        in: body
+        name: event
+        required: true
+        schema:
+          $ref: '#/definitions/models.Event'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Event'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_handlers.ErrorResponse'
+      summary: Create a new event
+      tags:
+      - events
+  /events/{id}:
+    get:
+      description: Event bilgilerini almak icin kullanilir.
+      parameters:
+      - description: Event ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Event'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_handlers.ErrorResponse'
+      summary: Get an event by ID
+      tags:
+      - events
+    put:
+      consumes:
+      - application/json
+      description: Event bilgilerini guncellemek icin kullanilir.
+      parameters:
+      - description: Event ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Event object to update
+        in: body
+        name: event
+        required: true
+        schema:
+          $ref: '#/definitions/models.Event'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Event'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_handlers.ErrorResponse'
+      summary: Update an existing event
+      tags:
+      - events
+  /events/{id}/schedules:
+    get:
+      description: Event icin tum Schedule'lari listelemek icin kullanilir.
+      parameters:
+      - description: Event ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.EventSchedule'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_handlers.ErrorResponse'
+      summary: Get schedules by event
+      tags:
+      - events
+    post:
+      consumes:
+      - application/json
+      description: Event icin yeni bir Schedule olusturmak icin kullanilir.
+      parameters:
+      - description: Event ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Schedule object to create
+        in: body
+        name: schedule
+        required: true
+        schema:
+          $ref: '#/definitions/models.EventSchedule'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.EventSchedule'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_handlers.ErrorResponse'
+      summary: Create a new event schedule
+      tags:
+      - events
+  /events/schedules/{id}:
+    get:
+      description: Schedule bilgilerini almak icin kullanilir.
+      parameters:
+      - description: Schedule ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.EventSchedule'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_handlers.ErrorResponse'
+      summary: Get a schedule by ID
+      tags:
+      - events
+    put:
+      consumes:
+      - application/json
+      description: Schedule bilgilerini guncellemek icin kullanilir.
+      parameters:
+      - description: Schedule ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Schedule object to update
+        in: body
+        name: schedule
+        required: true
+        schema:
+          $ref: '#/definitions/models.EventSchedule'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.EventSchedule'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_handlers.ErrorResponse'
+      summary: Update an event schedule
+      tags:
+      - events
+  /events/schedules/{id}/play:
+    post:
+      consumes:
+      - application/json
+      description: Event Schedule icin oyun oynamak icin kullanilir.
+      parameters:
+      - description: Schedule ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Play data
+        in: body
+        name: play_data
+        required: true
+        schema:
+          $ref: '#/definitions/models.PlayEventRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.EventPlayResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Play an event
+      tags:
+      - events
+  /events/schedules/{id}/player:
+    get:
+      description: Player'in Event oyun State'ini cekmek icin kullanilir. Eger Player
+        ilk kez geliyorsa State'i olusturulur, varsa mevcut State bilgisi dondurulur.
+        Event oynanmadan once bir kez ugranmasi gerekir.
+      parameters:
+      - description: Schedule ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.PlayerEvent'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Get player event
+      tags:
+      - events
+  /events/schedules/actives:
+    get:
+      description: Tum aktif event Schedule'lari listelemek icin kullanilir.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.ActiveEventSchedule'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_handlers.ErrorResponse'
+      summary: List active schedules
+      tags:
+      - events
+  /health:
+    get:
+      description: Check if the API is running
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handlers.HealthResponse'
+      summary: Health check
+      tags:
+      - health
+  /players/chips:
+    put:
+      consumes:
+      - application/json
+      description: Increment a player's chips balance (server-to-server only)
+      parameters:
+      - description: Increment chips request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handlers.IncrementChipsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated chips balance
+          schema:
+            type: integer
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/internal_api_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handlers.ErrorResponse'
+      summary: Increment player chips
+      tags:
+      - players
+  /players/me:
+    get:
+      description: Mevcut Player'in bilgilerini almak icin kullanilir.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Player'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/internal_api_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handlers.ErrorResponse'
+        "404":
+          description: Player not found
+          schema:
+            $ref: '#/definitions/internal_api_handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Get current player
+      tags:
+      - players
+securityDefinitions:
+  Bearer:
+    description: Type "Bearer" followed by a space and JWT token.
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

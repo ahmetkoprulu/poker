@@ -27,6 +27,15 @@ func (h *AuthHandler) RegisterRoutes(router *gin.RouterGroup) {
 	}
 }
 
+// @Summary Register a new user
+// @Description Email ve Parola ile kayit olmak icin kullanilir. Provider 1 Email anlamina gelir. Identifier alanina email adresi girilir. Secret alanina parola girilir.
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param user body models.RegisterRequest true "User registration details"
+// @Success 200 {object} models.ApiResponse[string] "User created successfully"
+// @Failure 400 {object} ErrorResponse
+// @Router /auth/register [post]
 func (h *AuthHandler) Register(c *gin.Context) {
 	req := BindModel[models.RegisterRequest](c)
 	if req == nil {
@@ -42,6 +51,15 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	Ok(c, "User created successfully")
 }
 
+// @Summary Login user
+// @Description Kullanici girisi yapmak icin kullanilir. Provider: 0: Guest, 1 Email, 2 Google
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param credentials body models.LoginRequest true "User login credentials"
+// @Success 200 {object} models.ApiResponse[models.UserPlayer] "Login successful"
+// @Failure 400 {object} ErrorResponse "Invalid credentials"
+// @Router /auth/login [post]
 func (h *AuthHandler) Login(c *gin.Context) {
 	req := BindModel[models.LoginRequest](c)
 	if req == nil {

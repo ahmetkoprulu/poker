@@ -23,6 +23,16 @@ func (h *PlayerHandler) RegisterRoutes(router *gin.RouterGroup, authMiddleware g
 	}
 }
 
+// @Summary Get current player
+// @Description Mevcut Player'in bilgilerini almak icin kullanilir.
+// @Tags players
+// @Produce json
+// @Security Bearer
+// @Success 200 {object} models.Player
+// @Failure 400 {object} ErrorResponse "Bad request"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 404 {object} ErrorResponse "Player not found"
+// @Router /players/me [get]
 func (h *PlayerHandler) GetMyPlayer(c *gin.Context) {
 	userId, playerId := c.GetString("userID"), c.GetString("playerID")
 	if userId == "" || playerId == "" {
@@ -50,6 +60,16 @@ func (h *PlayerHandler) GetMyPlayer(c *gin.Context) {
 	Ok(c, player)
 }
 
+// @Summary Increment player chips
+// @Description Increment a player's chips balance (server-to-server only)
+// @Tags players
+// @Accept json
+// @Produce json
+// @Param request body IncrementChipsRequest true "Increment chips request"
+// @Success 200 {integer} int64 "Updated chips balance"
+// @Failure 400 {object} ErrorResponse "Bad request"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Router /players/chips [put]
 func (h *PlayerHandler) IncrementChips(c *gin.Context) {
 	model := BindModel[IncrementChipsRequest](c)
 	if model == nil {
@@ -65,7 +85,10 @@ func (h *PlayerHandler) IncrementChips(c *gin.Context) {
 	Ok(c, chips)
 }
 
+// IncrementChipsRequest represents a request to increment a player's chips
 type IncrementChipsRequest struct {
-	ID     string `json:"id"`
-	Amount int    `json:"amount"`
+	// Player ID
+	ID string `json:"id" example:"123e4567-e89b-12d3-a456-426614174000"`
+	// Amount of chips to increment (can be negative for decrement)
+	Amount int `json:"amount" example:"1000"`
 }

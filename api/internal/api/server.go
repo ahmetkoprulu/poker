@@ -6,8 +6,7 @@ import (
 	"time"
 
 	"github.com/ahmetkoprulu/rtrp/common/data"
-
-	// _ "github.com/ahmetkoprulu/bidi-menu/docs"
+	_ "github.com/ahmetkoprulu/rtrp/docs" // swagger docs
 	"github.com/ahmetkoprulu/rtrp/internal/api/handlers"
 	"github.com/ahmetkoprulu/rtrp/internal/api/middleware"
 	"github.com/ahmetkoprulu/rtrp/internal/services"

@@ -186,3 +186,7 @@ type PlayerEventSchedule struct {
 	Tickets    int                    `json:"tickets_left"`
 	State      map[string]interface{} `json:"state"`
 }
+
+type PlayEventRequest struct {
+	Data map[string]interface{} `json:"play_data"`
+}

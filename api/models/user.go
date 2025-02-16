@@ -24,8 +24,8 @@ type Profile struct {
 
 type Player struct {
 	ID            string `json:"id"`
-	Username      string `json:"username,omitempty"`
-	ProfilePicURL string `json:"profile_pic_url,omitempty"`
+	Username      string `json:"username"`
+	ProfilePicURL string `json:"profile_pic_url"`
 	UserID        string `json:"-"`
 	Chips         int64  `json:"chips"`
 }
