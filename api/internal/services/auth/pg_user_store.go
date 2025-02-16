@@ -30,16 +30,18 @@ func (s *PgUserStore) GetUserByIdentifier(ctx context.Context, provider models.S
 		Player: &models.Player{},
 	}
 
+	var playerID, playerUsername, playerProfilePicURL *string
+	var playerChips *int64
 	err := s.Db.QueryRow(ctx, query, provider, identifier).Scan(
 		&result.ID,
 		&result.Provider,
 		&result.Identifier,
 		&result.Password,
 		&result.Profile,
-		&result.Player.ID,
-		&result.Player.Username,
-		&result.Player.ProfilePicURL,
-		&result.Player.Chips,
+		&playerID,
+		&playerUsername,
+		&playerProfilePicURL,
+		&playerChips,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -50,8 +52,13 @@ func (s *PgUserStore) GetUserByIdentifier(ctx context.Context, provider models.S
 	}
 
 	// If player ID is empty (LEFT JOIN returned no player), set Player to nil
-	if result.Player.ID == "" {
+	if playerID == nil {
 		result.Player = nil
+	} else {
+		result.Player.ID = *playerID
+		result.Player.Username = *playerUsername
+		result.Player.ProfilePicURL = *playerProfilePicURL
+		result.Player.Chips = *playerChips
 	}
 
 	return result, nil
@@ -60,7 +67,8 @@ func (s *PgUserStore) GetUserByIdentifier(ctx context.Context, provider models.S
 func (s *PgUserStore) CreateUser(ctx context.Context, user *models.User) error {
 	var query = `
 		INSERT INTO users (id, provider, identifier, password_hash, profile)
-		VALUES ($1, $2, $3, $4, $5)
+		VALUES ($1, $2, $3, $4, $5) 
+		RETURNING id
 	`
 
 	_, err := s.Db.Exec(ctx, query,
@@ -70,6 +78,7 @@ func (s *PgUserStore) CreateUser(ctx context.Context, user *models.User) error {
 		user.Password,
 		user.Profile,
 	)
+
 	return err
 }
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/ahmetkoprulu/rtrp/common/data"
 	"github.com/ahmetkoprulu/rtrp/internal/services/event"
 	"github.com/ahmetkoprulu/rtrp/models"
 	"github.com/google/uuid"
@@ -23,9 +24,10 @@ type EventService struct {
 	gameFactory event.IEventGameFactory
 }
 
-func NewEventService(store event.EventStore) *EventService {
+func NewEventService(db *data.PgDbContext) *EventService {
+
 	return &EventService{
-		store:       store,
+		store:       event.NewPgEventStore(db),
 		gameFactory: event.NewEventGameFactory(),
 	}
 }
@@ -55,8 +57,8 @@ func (s *EventService) GetEvent(ctx context.Context, id string) (*models.Event, 
 	return s.store.GetEvent(ctx, id)
 }
 
-func (s *EventService) ListActiveEvents(ctx context.Context) ([]*models.Event, error) {
-	return s.store.ListActiveEvents(ctx)
+func (s *EventService) ListEvents(ctx context.Context) ([]*models.Event, error) {
+	return s.store.ListEvents(ctx)
 }
 
 func (s *EventService) CreateSchedule(ctx context.Context, schedule *models.EventSchedule) error {
@@ -64,17 +66,12 @@ func (s *EventService) CreateSchedule(ctx context.Context, schedule *models.Even
 		return err
 	}
 
-	event, err := s.store.GetEvent(ctx, schedule.EventID)
-	if err != nil {
-		return err
-	}
-	if !event.IsActive {
-		return ErrEventNotActive
-	}
+	now := time.Now()
+	active := true
 
 	schedule.ID = uuid.New().String()
-	schedule.CreatedAt = time.Now()
-	schedule.IsActive = true
+	schedule.CreatedAt = now
+	schedule.IsActive = active
 
 	return s.store.CreateSchedule(ctx, schedule)
 }
@@ -91,7 +88,7 @@ func (s *EventService) GetSchedule(ctx context.Context, id string) (*models.Even
 	return s.store.GetSchedule(ctx, id)
 }
 
-func (s *EventService) ListActiveSchedules(ctx context.Context) ([]*models.EventSchedule, error) {
+func (s *EventService) ListActiveSchedules(ctx context.Context) ([]*models.ActiveEventSchedule, error) {
 	return s.store.ListActiveSchedules(ctx)
 }
 
@@ -99,10 +96,18 @@ func (s *EventService) GetSchedulesByEvent(ctx context.Context, eventID string) 
 	return s.store.GetSchedulesByEventID(ctx, eventID)
 }
 
-func (s *EventService) GetOrCreateUserEvent(ctx context.Context, userID, scheduleID string) (*models.UserEvent, error) {
-	userEvent, err := s.store.GetUserEvent(ctx, userID, scheduleID)
+func (s *EventService) GetOrCreatePlayerEvent(ctx context.Context, playerID, scheduleID string) (*models.PlayerEventSchedule, error) {
+	result := &models.PlayerEventSchedule{}
+	playerEvent, err := s.store.GetPlayerEvent(ctx, playerID, scheduleID)
 	if err == nil {
-		return userEvent, nil
+		result.ScheduleID = playerEvent.ScheduleID
+		result.Score = playerEvent.Score
+		result.Attempts = playerEvent.Attempts
+		result.LastPlay = playerEvent.LastPlay
+		result.Tickets = playerEvent.Tickets
+		result.State = playerEvent.State
+
+		return result, nil
 	}
 
 	schedule, err := s.store.GetSchedule(ctx, scheduleID)
@@ -114,45 +119,50 @@ func (s *EventService) GetOrCreateUserEvent(ctx context.Context, userID, schedul
 		return nil, ErrScheduleNotActive
 	}
 
-	event, err := s.store.GetEvent(ctx, schedule.EventID)
+	game, err := s.gameFactory.CreateEventGame(schedule.Event.Type)
 	if err != nil {
 		return nil, err
 	}
 
-	if !event.IsActive {
-		return nil, ErrEventNotActive
-	}
-
-	userEvent = &models.UserEvent{
+	state := game.GetInitialState()
+	playerEvent = &models.PlayerEvent{
 		ID:         uuid.New().String(),
-		UserID:     userID,
+		PlayerID:   playerID,
 		ScheduleID: scheduleID,
+		Tickets:    99999,
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),
 		ExpiresAt:  schedule.EndTime,
-		State:      make(map[string]interface{}),
+		State:      state,
 	}
 
-	if err := s.store.CreateUserEvent(ctx, userEvent); err != nil {
+	if err := s.store.CreatePlayerEvent(ctx, playerEvent); err != nil {
 		return nil, err
 	}
 
-	return userEvent, nil
+	result.ScheduleID = playerEvent.ScheduleID
+	result.Score = playerEvent.Score
+	result.Attempts = playerEvent.Attempts
+	result.LastPlay = playerEvent.LastPlay
+	result.Tickets = playerEvent.Tickets
+	result.State = playerEvent.State
+
+	return result, nil
 }
 
-func (s *EventService) ListUserEvents(ctx context.Context, userID string) ([]*models.UserEvent, error) {
-	return s.store.ListUserEvents(ctx, userID)
+func (s *EventService) ListPlayerEvents(ctx context.Context, playerID string) ([]*models.PlayerEvent, error) {
+	return s.store.ListPlayerEvents(ctx, playerID)
 }
 
-func (s *EventService) UpdateUserEvent(ctx context.Context, userEvent *models.UserEvent) error {
-	userEvent.UpdatedAt = time.Now()
-	return s.store.UpdateUserEvent(ctx, userEvent)
+func (s *EventService) UpdatePlayerEvent(ctx context.Context, playerEvent *models.PlayerEvent) error {
+	playerEvent.UpdatedAt = time.Now()
+	return s.store.UpdatePlayerEvent(ctx, playerEvent)
 }
 
 // PlayEvent handles a game play attempt
-func (s *EventService) PlayEvent(ctx context.Context, userID string, scheduleID string, playData map[string]interface{}) (*models.EventPlayResult, error) {
+func (s *EventService) PlayEvent(ctx context.Context, playerID, scheduleID string, playData map[string]interface{}) (*models.EventPlayResult, error) {
 	// Get user event
-	userEvent, err := s.GetOrCreateUserEvent(ctx, userID, scheduleID)
+	playerEvent, err := s.store.GetPlayerEvent(ctx, playerID, scheduleID)
 	if err != nil {
 		return nil, err
 	}
@@ -172,10 +182,6 @@ func (s *EventService) PlayEvent(ctx context.Context, userID string, scheduleID 
 		return nil, err
 	}
 
-	if !event.IsActive {
-		return nil, ErrEventNotActive
-	}
-
 	// Create game instance
 	gameInstance, err := s.gameFactory.CreateEventGame(event.Type)
 	if err != nil {
@@ -183,14 +189,14 @@ func (s *EventService) PlayEvent(ctx context.Context, userID string, scheduleID 
 	}
 
 	// Initialize game
-	if err := gameInstance.Initialize(ctx, event, userEvent); err != nil {
+	if err := gameInstance.Initialize(ctx, *event, *playerEvent); err != nil {
 		return nil, err
 	}
 
 	// Create play request
 	playRequest := &models.EventPlayRequest{
-		UserEvent: userEvent,
-		PlayData:  playData,
+		PlayerEvent: playerEvent,
+		PlayData:    playData,
 	}
 
 	// Validate play
@@ -204,13 +210,13 @@ func (s *EventService) PlayEvent(ctx context.Context, userID string, scheduleID 
 		return nil, err
 	}
 
-	// Update user event state
-	if err := gameInstance.UpdateState(ctx, userEvent, playResult); err != nil {
+	// Update player event state
+	if err := gameInstance.UpdateState(ctx, playerEvent, playResult); err != nil {
 		return nil, err
 	}
 
-	// Save updated user event
-	if err := s.store.UpdateUserEvent(ctx, userEvent); err != nil {
+	// Save updated player event
+	if err := s.store.UpdatePlayerEvent(ctx, playerEvent); err != nil {
 		return nil, err
 	}
 

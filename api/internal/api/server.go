@@ -21,16 +21,19 @@ type Server struct {
 	httpServer    *http.Server
 	authService   *services.AuthService
 	playerService *services.PlayerService
+	eventService  *services.EventService
 	db            *data.PgDbContext
 }
 
 func NewServer(db *data.PgDbContext) *Server {
 	authService := services.NewAuthService(db)
 	playerService := services.NewPlayerService(db)
+	eventService := services.NewEventService(db)
 	server := &Server{
 		router:        gin.Default(),
 		authService:   authService,
 		playerService: playerService,
+		eventService:  eventService,
 		db:            db,
 	}
 
@@ -42,6 +45,7 @@ func NewServer(db *data.PgDbContext) *Server {
 
 	authHandler := handlers.NewAuthHandler(authService)
 	playerHandler := handlers.NewPlayerHandler(playerService)
+	eventHandler := handlers.NewEventHandler(eventService)
 	healthHandler := handlers.NewHealthHandler()
 
 	authMiddleware := middleware.AuthMiddleware()
@@ -53,7 +57,7 @@ func NewServer(db *data.PgDbContext) *Server {
 	{
 		authHandler.RegisterRoutes(v1)
 		playerHandler.RegisterRoutes(v1, authMiddleware, serverToServerAuthMiddleware)
-
+		eventHandler.RegisterRoutes(v1, authMiddleware)
 		// Protected routes
 		// protected := v1.Group("", authMiddleware)
 		// {

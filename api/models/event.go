@@ -35,12 +35,26 @@ const (
 	ProductTypeGold  ProductType = 2
 )
 
+type AssetType int16
+
+const (
+	AssetTypeImage AssetType = 1
+	AssetTypeVideo AssetType = 2
+	AssetTypeAudio AssetType = 3
+)
+
+type Asset struct {
+	Name string    `json:"name"`
+	URL  string    `json:"url"`
+	Type AssetType `json:"type"`
+}
+
 type Event struct {
 	ID        string                 `json:"id"`
 	Type      EventType              `json:"type"`
 	Name      string                 `json:"name"`
+	Assets    []Asset                `json:"assets"`
 	Config    map[string]interface{} `json:"config"`
-	IsActive  bool                   `json:"is_active"`
 	CreatedAt time.Time              `json:"created_at"`
 	UpdatedAt time.Time              `json:"updated_at"`
 }
@@ -52,12 +66,14 @@ type EventSchedule struct {
 	EndTime   time.Time `json:"end_time"`
 	IsActive  bool      `json:"is_active"`
 	CreatedAt time.Time `json:"created_at"`
+
+	Event *Event `json:"event"`
 }
 
-type UserEvent struct {
+type PlayerEvent struct {
 	ID         string `json:"id"`
 	ScheduleID string `json:"schedule_id"`
-	UserID     string `json:"user_id"`
+	PlayerID   string `json:"player_id"`
 
 	Score    int64     `json:"score"`
 	Attempts int       `json:"attempts"`
@@ -72,19 +88,19 @@ type UserEvent struct {
 }
 
 type EventPlayRequest struct {
-	UserEvent *UserEvent
-	PlayData  map[string]interface{}
+	PlayerEvent *PlayerEvent
+	PlayData    map[string]interface{}
 }
 
 type EventPlayResult struct {
-	UserEvent UserEvent     `json:"user_event"`
-	Rewards   []EventReward `json:"rewards"`
-	Data      any           `json:"data"`
+	PlayerEvent PlayerEvent   `json:"player_event"`
+	Rewards     []EventReward `json:"rewards"`
+	Data        any           `json:"data"`
 }
 
 type RewardValue struct {
-	Amount   int64                  `json:"amount"`
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
+	Amount int64 `json:"amount"`
+	// Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
 type EventReward struct {
@@ -142,10 +158,31 @@ func (s *EventSchedule) Validate() error {
 	return nil
 }
 
-func (p *UserEvent) IsActive(schedule EventSchedule) bool {
+func (p *PlayerEvent) IsActive(schedule EventSchedule) bool {
 	now := time.Now()
 	return p.Tickets > 0 &&
 		now.Before(p.ExpiresAt) &&
 		now.Before(schedule.EndTime) &&
 		schedule.IsActive
+}
+
+type ActiveEventSchedule struct {
+	ID        string    `json:"id"`
+	EventID   string    `json:"event_id"`
+	StartTime time.Time `json:"start_time"`
+	EndTime   time.Time `json:"end_time"`
+
+	// Event
+	Type   EventType `json:"type"`
+	Name   string    `json:"name"`
+	Assets []Asset   `json:"assets"`
+}
+
+type PlayerEventSchedule struct {
+	ScheduleID string                 `json:"schedule_id"`
+	Score      int64                  `json:"score"`
+	Attempts   int                    `json:"attempts"`
+	LastPlay   time.Time              `json:"last_play"`
+	Tickets    int                    `json:"tickets_left"`
+	State      map[string]interface{} `json:"state"`
 }

@@ -3,6 +3,7 @@ package models
 import (
 	"strconv"
 
+	"github.com/google/uuid"
 	"golang.org/x/exp/rand"
 )
 
@@ -57,6 +58,7 @@ func (u *User) GetEmail() string {
 // NewEmailUser creates a new user with email authentication
 func NewEmailUser(email string, password string) *User {
 	return &User{
+		ID:         uuid.New().String(),
 		Provider:   Email,
 		Identifier: email,
 		Password:   password,
@@ -68,6 +70,7 @@ func NewEmailUser(email string, password string) *User {
 
 func NewGuestUser(identifier string) *User {
 	return &User{
+		ID:         uuid.New().String(),
 		Provider:   Guest,
 		Identifier: identifier,
 	}
@@ -76,6 +79,7 @@ func NewGuestUser(identifier string) *User {
 // NewSocialUser creates a new user with social authentication
 func NewSocialUser(provider SocialNetwork, providerUserID string, email string, name string) *User {
 	return &User{
+		ID:         uuid.New().String(),
 		Provider:   provider,
 		Identifier: providerUserID,
 		Profile: Profile{
@@ -87,7 +91,7 @@ func NewSocialUser(provider SocialNetwork, providerUserID string, email string, 
 
 func NewGuestPlayer(userID string) *Player {
 	return &Player{
-		ID:            userID,
+		UserID:        userID,
 		Username:      "Guest" + strconv.Itoa(rand.Intn(1000000)),
 		ProfilePicURL: "avatar_0",
 		Chips:         1000,
