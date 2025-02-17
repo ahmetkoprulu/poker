@@ -11,7 +11,7 @@ type EventGame interface {
 	Initialize(ctx context.Context, event models.Event, playerEvent models.PlayerEvent) error
 	ValidatePlay(ctx context.Context, req *models.EventPlayRequest) error
 	ProcessPlay(ctx context.Context, req *models.EventPlayRequest) (*models.EventPlayResult, error)
-	// CalculateRewards(ctx context.Context, req *PlayRequest, result *models.EventPlayResult[any]) error
+	// CalculateRewards(ctx context.Context, req *models.EventPlayRequest, result *models.EventPlayResult) error
 	UpdateState(ctx context.Context, playerEvent *models.PlayerEvent, result *models.EventPlayResult) error
 	GetInitialState() map[string]interface{}
 }

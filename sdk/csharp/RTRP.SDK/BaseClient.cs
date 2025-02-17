@@ -10,13 +10,29 @@ namespace RTRP.SDK
 
     public abstract class BaseClient : IBaseClient
     {
-        public string BaseUrl { get; set; }
-        public HttpClient HttpClient { get; }
+        private string _baseUrl;
+        private HttpClient _httpClient;
+
+        public string BaseUrl
+        {
+            get { return _baseUrl; }
+            set { _baseUrl = value; }
+        }
+
+        public HttpClient HttpClient
+        {
+            get { return _httpClient; }
+            protected set { _httpClient = value; }
+        }
+
+        protected BaseClient()
+        {
+        }
 
         protected BaseClient(HttpClient httpClient, string baseUrl)
         {
-            HttpClient = httpClient;
-            BaseUrl = baseUrl;
+            _httpClient = httpClient;
+            _baseUrl = baseUrl;
         }
     }
 }

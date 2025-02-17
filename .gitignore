@@ -47,3 +47,9 @@ __debug_bin
 # Temporary files
 tmp/
 temp/ 
+
+# SDKs
+sdk/csharp/RTRP.Example/bin/
+sdk/csharp/RTRP.Example/obj/
+sdk/csharp/RTRP.Example/bin/
+sdk/csharp/RTRP.Example/obj/

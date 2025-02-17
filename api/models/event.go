@@ -28,13 +28,6 @@ var (
 	ErrInvalidReward   = errors.New("invalid reward configuration")
 )
 
-type ProductType int16
-
-const (
-	ProductTypeChips ProductType = 1
-	ProductTypeGold  ProductType = 2
-)
-
 type AssetType int16
 
 const (
@@ -93,51 +86,9 @@ type EventPlayRequest struct {
 }
 
 type EventPlayResult struct {
-	PlayerEvent PlayerEvent   `json:"player_event"`
-	Rewards     []EventReward `json:"rewards"`
-	Data        any           `json:"data"`
-}
-
-type RewardValue struct {
-	Amount int64 `json:"amount"`
-	// Metadata map[string]interface{} `json:"metadata,omitempty"`
-}
-
-type EventReward struct {
-	Type  ProductType `json:"type"`
-	Value RewardValue `json:"value"`
-}
-
-func (r *EventReward) GetChipsAmount() int64 {
-	if r.Type == ProductTypeChips {
-		return r.Value.Amount
-	}
-	return 0
-}
-
-func (r *EventReward) GetGoldAmount() int32 {
-	if r.Type == ProductTypeGold {
-		return int32(r.Value.Amount)
-	}
-	return 0
-}
-
-func NewChipsReward(amount int64) EventReward {
-	return EventReward{
-		Type: ProductTypeChips,
-		Value: RewardValue{
-			Amount: amount,
-		},
-	}
-}
-
-func NewGoldReward(amount int32) EventReward {
-	return EventReward{
-		Type: ProductTypeGold,
-		Value: RewardValue{
-			Amount: int64(amount),
-		},
-	}
+	PlayerEvent PlayerEvent `json:"player_event"`
+	Rewards     []Item      `json:"rewards"`
+	Data        any         `json:"data"`
 }
 
 func (e *Event) Validate() error {

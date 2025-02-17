@@ -26,7 +26,7 @@ type PathGameConfig struct {
 }
 
 type PathStep struct {
-	Reward models.EventReward `json:"reward"`
+	Reward models.Item `json:"reward"`
 }
 
 type PathGameState struct {
@@ -107,7 +107,7 @@ func (g *PathGame) ProcessPlay(ctx context.Context, req *models.EventPlayRequest
 
 	result := &models.EventPlayResult{
 		PlayerEvent: *g.PlayerEvent,
-		Rewards:     make([]models.EventReward, 0),
+		Rewards:     make([]models.Item, 0),
 		Data: PathGameResult{
 			TotalSteps: newTotalSteps,
 			LastRoll:   rolls,
