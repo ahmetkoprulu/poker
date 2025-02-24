@@ -2,7 +2,6 @@ package event
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"math/rand"
 	"time"
@@ -11,10 +10,7 @@ import (
 )
 
 var (
-	ErrInvalidPosition  = errors.New("invalid position")
-	ErrGameCompleted    = errors.New("game already completed")
-	ErrInvalidConfig    = errors.New("invalid game configuration")
-	ErrNotEnoughTickets = errors.New("not enough tickets")
+	ErrInvalidPosition = errors.New("invalid position")
 )
 
 type PathGameConfig struct {
@@ -36,8 +32,11 @@ type PathGameState struct {
 }
 
 type PathGameResult struct {
-	TotalSteps int   `json:"total_steps"` // Total steps taken
-	LastRoll   []int `json:"last_roll"`   // Last dice roll results
+	OldStep       int           `json:"old_step"`        // Old step
+	CurrentStep   int           `json:"current_step"`    // Current step
+	TotalSteps    int           `json:"total_steps"`     // Total steps taken
+	LastRoll      []int         `json:"last_roll"`       // Last dice roll results
+	LevelUpReward []models.Item `json:"level_up_reward"` // Level up reward
 }
 
 type PathGame struct {
@@ -74,9 +73,9 @@ func (g *PathGame) Initialize(ctx context.Context, event models.Event, playerEve
 			CurrentStep: 0,
 			LastRoll:    make([]int, 0),
 		}
-		g.PlayerEvent.State = stateToMap(g.state)
+		g.PlayerEvent.State = stateToMap[PathGameState](g.state)
 	} else {
-		if err := parseState(g.PlayerEvent.State, &g.state); err != nil {
+		if err := parseState[PathGameState](g.PlayerEvent.State, &g.state); err != nil {
 			return err
 		}
 	}
@@ -98,20 +97,22 @@ func (g *PathGame) ProcessPlay(ctx context.Context, req *models.EventPlayRequest
 		totalMove += roll
 	}
 
+	prevLaps := g.state.TotalSteps / len(g.config.Steps)
 	maxPosition := len(g.config.Steps)
 	newTotalSteps := g.state.TotalSteps + totalMove
 	currentPosition := newTotalSteps % maxPosition
+	completedLaps := newTotalSteps / maxPosition
 
 	// Get current step directly from array index
 	currentStep := &g.config.Steps[currentPosition]
+	pathResult := &PathGameResult{
+		TotalSteps: newTotalSteps,
+		LastRoll:   rolls,
+	}
 
 	result := &models.EventPlayResult{
 		PlayerEvent: *g.PlayerEvent,
 		Rewards:     make([]models.Item, 0),
-		Data: PathGameResult{
-			TotalSteps: newTotalSteps,
-			LastRoll:   rolls,
-		},
 	}
 
 	// Update state
@@ -119,21 +120,21 @@ func (g *PathGame) ProcessPlay(ctx context.Context, req *models.EventPlayRequest
 	g.state.CurrentStep = currentPosition
 	g.state.LastRoll = rolls
 
-	// Calculate base score and progress
-	baseScore := int64(totalMove * 10) // Base score from movement
-
-	// Apply step rewards if not collected
 	result.Rewards = append(result.Rewards, currentStep.Reward)
 
 	// Add lap completion bonus if we just completed a lap
-	// prevLaps := g.state.TotalSteps / maxPosition
-	// if completedLaps > prevLaps {
-	// 	lapBonus := models.NewChipsReward(1000 * int64(completedLaps))
-	// 	result.Rewards = append(result.Rewards, lapBonus)
-	// }
+	if completedLaps > prevLaps {
+		lapBonus := models.Item{
+			Type:   models.ItemTypeChips,
+			Amount: 1000 * completedLaps,
+		}
+		pathResult.LevelUpReward = append(result.Rewards, lapBonus)
+	}
+
+	result.Data = pathResult
 
 	// Update user event
-	g.PlayerEvent.Score += baseScore
+	g.PlayerEvent.Score += int64(totalMove * 10)
 
 	return result, nil
 }
@@ -188,26 +189,3 @@ func (g *PathGame) rollDice() []int {
 // 		g.state.SpecialEffects = append(g.state.SpecialEffects, "EXTRA_ROLL")
 // 	}
 // }
-
-func parseConfig(input map[string]interface{}, config *PathGameConfig) error {
-	data, err := json.Marshal(input)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(data, config)
-}
-
-func parseState(input map[string]interface{}, state *PathGameState) error {
-	data, err := json.Marshal(input)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(data, state)
-}
-
-func stateToMap(state PathGameState) map[string]interface{} {
-	data, _ := json.Marshal(state)
-	result := make(map[string]interface{})
-	_ = json.Unmarshal(data, &result)
-	return result
-}

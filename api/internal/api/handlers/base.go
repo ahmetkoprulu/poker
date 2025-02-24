@@ -20,7 +20,7 @@ type ErrorResponse struct {
 // Data related functions
 func BindModel[T any](ctx *gin.Context) *T {
 	var model T
-	if err := ctx.BindJSON(&model); err != nil {
+	if err := ctx.ShouldBindJSON(&model); err != nil {
 		BadRequest(ctx, err.Error())
 		return nil
 	}

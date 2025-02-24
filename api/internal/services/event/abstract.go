@@ -2,9 +2,17 @@ package event
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/ahmetkoprulu/rtrp/models"
+)
+
+var (
+	ErrGameCompleted    = errors.New("game already completed")
+	ErrInvalidConfig    = errors.New("invalid game configuration")
+	ErrNotEnoughTickets = errors.New("not enough tickets")
 )
 
 type EventGame interface {
@@ -62,4 +70,27 @@ type EventStore interface {
 	UpdatePlayerEvent(ctx context.Context, playerEvent *models.PlayerEvent) error
 	GetPlayerEvent(ctx context.Context, playerID, scheduleID string) (*models.PlayerEvent, error)
 	ListPlayerEvents(ctx context.Context, playerID string) ([]*models.PlayerEvent, error)
+}
+
+func parseConfig[T any](input map[string]interface{}, config *T) error {
+	data, err := json.Marshal(input)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, config)
+}
+
+func parseState[T any](input map[string]interface{}, state *T) error {
+	data, err := json.Marshal(input)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, state)
+}
+
+func stateToMap[T any](state T) map[string]interface{} {
+	data, _ := json.Marshal(state)
+	result := make(map[string]interface{})
+	_ = json.Unmarshal(data, &result)
+	return result
 }

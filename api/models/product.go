@@ -3,8 +3,9 @@ package models
 type ItemType int16
 
 const (
-	ItemTypeChips ItemType = 1
-	ItemTypeGold  ItemType = 2
+	ItemTypeChips        ItemType = 1
+	ItemTypeGold         ItemType = 2
+	ItemTypeBattlePassXP ItemType = 99
 )
 
 type Item struct {

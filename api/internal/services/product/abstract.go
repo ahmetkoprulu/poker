@@ -15,4 +15,5 @@ const (
 type ProductStore interface {
 	GetProduct(ctx context.Context, id string) (*models.Product, error)
 	GiveReward(ctx context.Context, playerID string, rewards []*models.Item) error
+	GiveRewardToPlayer(ctx context.Context, items []models.Item, playerID string) error
 }

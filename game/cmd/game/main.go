@@ -20,25 +20,14 @@ func main() {
 
 	utils.SetJWTSecret(config.JWTSecret)
 
-	// Create game manager
 	gameManager := game.NewGameManager()
-
-	// Create message handler
 	messageHandler := websocket.NewMessageHandler(gameManager)
-
-	// Create WebSocket server
 	wsServer := websocket.NewServer(messageHandler)
 
-	// Set server reference in message handler
 	messageHandler.SetServer(wsServer)
-
-	// Start WebSocket server in a goroutine
 	go wsServer.Run()
 
-	// Set up WebSocket endpoint
 	http.HandleFunc("/ws", wsServer.HandleWebSocket)
-
-	// Start HTTP server
 	log.Println("Starting game server on :8080...")
 	log.Println("Default room created and ready for connections")
 	if err := http.ListenAndServe(":8080", nil); err != nil {

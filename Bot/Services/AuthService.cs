@@ -42,6 +42,7 @@ public class AuthService(IHttpClientFactory httpClientFactory, IConfiguration co
         var client = httpClientFactory.CreateClient();
         client.BaseAddress = new Uri(_baseUrl);
         client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _token);
+        client.DefaultRequestHeaders.Add("Authorization", $"Bearer ${_token}");
 
         var playerResponse = await client.GetAsync("/api/v1/players/me");
         if (!playerResponse.IsSuccessStatusCode)

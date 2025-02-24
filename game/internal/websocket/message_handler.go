@@ -50,7 +50,6 @@ func (h *MessageHandler) SetServer(server *Server) {
 	h.server = server
 }
 
-// HandleMessage processes incoming WebSocket messages
 func (h *MessageHandler) HandleMessage(client *Client, message []byte) error {
 	var msg Message
 	if err := json.Unmarshal(message, &msg); err != nil {

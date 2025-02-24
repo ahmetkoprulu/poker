@@ -28,6 +28,9 @@ func NewServer(db *data.PgDbContext) *Server {
 	authService := services.NewAuthService(db)
 	playerService := services.NewPlayerService(db)
 	eventService := services.NewEventService(db)
+	productService := services.NewProductService(db)
+	battlePassService := services.NewBattlePassService(db, productService)
+
 	server := &Server{
 		router:        gin.Default(),
 		authService:   authService,
@@ -46,6 +49,7 @@ func NewServer(db *data.PgDbContext) *Server {
 	playerHandler := handlers.NewPlayerHandler(playerService)
 	eventHandler := handlers.NewEventHandler(eventService)
 	healthHandler := handlers.NewHealthHandler()
+	battlePassHandler := handlers.NewBattlePassHandler(battlePassService)
 
 	authMiddleware := middleware.AuthMiddleware()
 	serverToServerAuthMiddleware := middleware.ServerToServerAuthMiddleware()
@@ -57,6 +61,7 @@ func NewServer(db *data.PgDbContext) *Server {
 		authHandler.RegisterRoutes(v1)
 		playerHandler.RegisterRoutes(v1, authMiddleware, serverToServerAuthMiddleware)
 		eventHandler.RegisterRoutes(v1, authMiddleware)
+		battlePassHandler.RegisterRoutes(v1, authMiddleware)
 		// Protected routes
 		// protected := v1.Group("", authMiddleware)
 		// {
