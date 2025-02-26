@@ -147,7 +147,7 @@ func (h *BattlePassHandler) ClaimReward(c *gin.Context) {
 	}
 
 	// Claim reward
-	err = h.battlePassService.ClaimReward(c, playerBattlePass.ID, model.Level, model.IsPremium)
+	reward, err := h.battlePassService.ClaimReward(c, playerBattlePass.ID, model.Level, model.IsPremium)
 	if err != nil {
 		switch err {
 		case services.ErrInsufficientLevel:
@@ -162,7 +162,7 @@ func (h *BattlePassHandler) ClaimReward(c *gin.Context) {
 		return
 	}
 
-	Ok(c, "Reward claimed successfully")
+	Ok(c, reward)
 }
 
 type UpgradeToPremiumRequest struct {
@@ -208,7 +208,7 @@ func (h *BattlePassHandler) UpgradeToPremium(c *gin.Context) {
 		return
 	}
 
-	Ok(c, "Upgraded to premium successfully")
+	Ok(c, nil)
 }
 
 type CreateBattlePassRequest struct {
@@ -276,7 +276,7 @@ func (h *BattlePassHandler) CreateBattlePassFromTemplate(c *gin.Context) {
 		return
 	}
 
-	Ok(c, "Battle pass created successfully")
+	Ok(c, nil)
 }
 
 // GetPlayerBattlePassDetails godoc
@@ -372,5 +372,5 @@ func (h *BattlePassHandler) AddXP(c *gin.Context) {
 		return
 	}
 
-	Ok(c, "XP added successfully")
+	Ok(c, nil)
 }

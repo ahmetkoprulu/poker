@@ -1,17 +1,22 @@
 package handlers
 
 import (
+	"math/rand"
+
 	"github.com/ahmetkoprulu/rtrp/internal/services"
+	"github.com/ahmetkoprulu/rtrp/models"
 	"github.com/gin-gonic/gin"
 )
 
 type PlayerHandler struct {
-	playerService *services.PlayerService
+	playerService  *services.PlayerService
+	productService *services.ProductService
 }
 
-func NewPlayerHandler(playerService *services.PlayerService) *PlayerHandler {
+func NewPlayerHandler(playerService *services.PlayerService, productService *services.ProductService) *PlayerHandler {
 	return &PlayerHandler{
-		playerService: playerService,
+		playerService:  playerService,
+		productService: productService,
 	}
 }
 
@@ -20,6 +25,8 @@ func (h *PlayerHandler) RegisterRoutes(router *gin.RouterGroup, authMiddleware g
 	{
 		player.GET("/me", authMiddleware, h.GetMyPlayer)
 		player.PUT("/chips", serverToServerAuthMiddleware, h.IncrementChips)
+		player.POST("/free-spin-wheel", authMiddleware, h.FreeSpinWheel)
+		player.POST("/spin-wheel", authMiddleware, h.SpinWheel)
 	}
 }
 
@@ -83,6 +90,125 @@ func (h *PlayerHandler) IncrementChips(c *gin.Context) {
 	}
 
 	Ok(c, chips)
+}
+
+type SpinWheelResponse struct {
+	Index  int         `json:"index"`
+	Reward models.Item `json:"reward"`
+}
+
+func (h *PlayerHandler) FreeSpinWheel(c *gin.Context) {
+	userId, playerId := c.GetString("userID"), c.GetString("playerID")
+	if userId == "" || playerId == "" {
+		BadRequest(c, "userID and playerID are required")
+		return
+	}
+
+	rewards := []models.Item{
+		{
+			Type:   models.ItemTypeChips,
+			Amount: 1000,
+		},
+		{
+			Type:   models.ItemTypeChips,
+			Amount: 1100,
+		},
+		{
+			Type:   models.ItemTypeChips,
+			Amount: 1200,
+		},
+		{
+			Type:   models.ItemTypeChips,
+			Amount: 1300,
+		},
+		{
+			Type:   models.ItemTypeChips,
+			Amount: 1400,
+		},
+		{
+			Type:   models.ItemTypeChips,
+			Amount: 1500,
+		},
+		{
+			Type:   models.ItemTypeChips,
+			Amount: 1600,
+		},
+		{
+			Type:   models.ItemTypeGold,
+			Amount: 1700,
+		},
+	}
+
+	index := rand.Intn(len(rewards))
+	reward := rewards[index]
+
+	err := h.productService.GiveRewardToPlayer(c.Request.Context(), []models.Item{reward}, playerId)
+	if err != nil {
+		BadRequest(c, err.Error())
+		return
+	}
+
+	Ok(c, SpinWheelResponse{
+		Index:  index,
+		Reward: reward,
+	})
+}
+
+func (h *PlayerHandler) SpinWheel(c *gin.Context) {
+	userId, playerId := c.GetString("userID"), c.GetString("playerID")
+	if userId == "" || playerId == "" {
+		BadRequest(c, "userID and playerID are required")
+		return
+	}
+
+	rewards := []models.Item{
+		{
+			Type:   models.ItemTypeChips,
+			Amount: 1000 * 10,
+		},
+		{
+			Type:   models.ItemTypeChips,
+			Amount: 1000 * 11,
+		},
+		{
+			Type:   models.ItemTypeChips,
+			Amount: 1000 * 12,
+		},
+		{
+			Type:   models.ItemTypeChips,
+			Amount: 1000 * 13,
+		},
+		{
+			Type:   models.ItemTypeChips,
+			Amount: 1000 * 14,
+		},
+		{
+			Type:   models.ItemTypeChips,
+			Amount: 1000 * 15,
+		},
+		{
+			Type:   models.ItemTypeChips,
+			Amount: 1000 * 16,
+		},
+		{
+			Type:   models.ItemTypeGold,
+			Amount: 1000 * 17,
+		},
+	}
+
+	index := rand.Intn(len(rewards))
+	reward := rewards[index]
+
+	err := h.productService.GiveRewardToPlayer(c.Request.Context(), []models.Item{reward}, playerId)
+	if err != nil {
+		BadRequest(c, err.Error())
+		return
+	}
+
+	Ok(c, SpinWheelResponse{
+		Index:  index,
+		Reward: reward,
+	})
 }
 
 // IncrementChipsRequest represents a request to increment a player's chips

@@ -274,12 +274,10 @@ func (s *BattlePassService) AddXP(ctx context.Context, playerBattlePassID string
 	return tx.Commit(ctx)
 }
 
-// ClaimReward claims a reward for a specific level
-func (s *BattlePassService) ClaimReward(ctx context.Context, playerBattlePassID string, level int, isPremium bool) error {
-	// Start transaction
+func (s *BattlePassService) ClaimReward(ctx context.Context, playerBattlePassID string, level int, isPremium bool) (*models.PlayerBattlePassReward, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer tx.Rollback(ctx)
 
@@ -300,15 +298,15 @@ func (s *BattlePassService) ClaimReward(ctx context.Context, playerBattlePassID 
 		&currentLevel, &hasPremium, &freeRewards, &premiumRewards, &playerID,
 	)
 	if err != nil {
-		return ErrLevelNotFound
+		return nil, ErrLevelNotFound
 	}
 
 	if currentLevel < level {
-		return ErrInsufficientLevel
+		return nil, ErrInsufficientLevel
 	}
 
 	if isPremium && !hasPremium {
-		return ErrPremiumRequired
+		return nil, ErrPremiumRequired
 	}
 
 	// Check if reward was already claimed
@@ -325,14 +323,13 @@ func (s *BattlePassService) ClaimReward(ctx context.Context, playerBattlePassID 
 	var alreadyClaimed bool
 	err = tx.QueryRow(ctx, query, playerBattlePassID, level, isPremium).Scan(&alreadyClaimed)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if alreadyClaimed {
-		return ErrRewardAlreadyClaimed
+		return nil, ErrRewardAlreadyClaimed
 	}
 
-	// Record the claim
 	claim := &models.PlayerBattlePassReward{
 		ID:                 uuid.New().String(),
 		PlayerBattlePassID: playerBattlePassID,
@@ -358,7 +355,7 @@ func (s *BattlePassService) ClaimReward(ctx context.Context, playerBattlePassID 
 		claim.ClaimedAt, claim.CreatedAt,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Distribute rewards
@@ -369,10 +366,10 @@ func (s *BattlePassService) ClaimReward(ctx context.Context, playerBattlePassID 
 
 	err = s.productService.GiveRewardToPlayer(ctx, rewards, playerID)
 	if err != nil {
-		return fmt.Errorf("failed to give rewards: %w", err)
+		return nil, fmt.Errorf("failed to give rewards: %w", err)
 	}
 
-	return tx.Commit(ctx)
+	return claim, tx.Commit(ctx)
 }
 
 // UpgradeToPremium upgrades a player's battle pass to premium

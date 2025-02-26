@@ -48,7 +48,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	Ok(c, "User created successfully")
+	Ok(c, nil)
 }
 
 // @Summary Login user
