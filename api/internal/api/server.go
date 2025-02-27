@@ -46,7 +46,7 @@ func NewServer(db *data.PgDbContext) *Server {
 	server.router.Use(middleware.StaticFileMiddleware())
 
 	authHandler := handlers.NewAuthHandler(authService)
-	playerHandler := handlers.NewPlayerHandler(playerService)
+	playerHandler := handlers.NewPlayerHandler(playerService, productService)
 	eventHandler := handlers.NewEventHandler(eventService)
 	healthHandler := handlers.NewHealthHandler()
 	battlePassHandler := handlers.NewBattlePassHandler(battlePassService)

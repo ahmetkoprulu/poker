@@ -3,8 +3,9 @@ package models
 type ItemType int16
 
 const (
-	ItemTypeChips        ItemType = 1
-	ItemTypeGold         ItemType = 2
+	ItemTypeChips        ItemType = 0
+	ItemTypeGold         ItemType = 1
+	ItemTypeGoldSpin     ItemType = 98
 	ItemTypeBattlePassXP ItemType = 99
 )
 
