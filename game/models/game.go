@@ -1,12 +1,14 @@
 package models
 
 import (
-	"time"
+	"encoding/json"
+	"errors"
+
+	"slices"
 
 	"github.com/google/uuid"
 )
 
-// GameStatus represents the current state of the game
 type GameStatus string
 
 const (
@@ -15,86 +17,152 @@ const (
 	GameStatusFinished GameStatus = "finished"
 )
 
-// Card represents a playing card
+type GamePlayerStatus string
+
+const (
+	GamePlayerStatusWaiting  GamePlayerStatus = "waiting"
+	GamePlayerStatusActive   GamePlayerStatus = "active"
+	GamePlayerStatusInactive GamePlayerStatus = "inactive"
+)
+
+type GameError error
+
+var (
+	ErrorGameFull            GameError = errors.New("game_full")
+	ErrorGamePlayerAlreadyIn GameError = errors.New("game_player_already_in")
+	ErrorGamePositionTaken   GameError = errors.New("game_position_taken")
+	ErrorGamePlayerNotFound  GameError = errors.New("game_player_not_found")
+	ErrorGameNotReady        GameError = errors.New("game_not_ready")
+)
+
+type GameType string
+
+const (
+	GameTypeHoldem GameType = "holdem"
+)
+
+type IPlayable interface {
+	Start() error
+	End() error
+	ProcessAction(action json.RawMessage) error
+	CanStart() bool
+	DealCards() error
+	EvaluateHands() error
+	GetGameState() interface{}
+}
+
+type GameAction struct {
+	PlayerID string          `json:"playerId"`
+	Action   string          `json:"action"` // fold, check, call, raise
+	Data     json.RawMessage `json:"data"`
+}
+
 type Card struct {
 	Suit   string `json:"suit"`
 	Value  string `json:"value"`
 	Hidden bool   `json:"hidden"`
 }
 
-// Player represents a player in the game
-type Player struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Cards      []Card `json:"cards"`
-	Chips      int    `json:"chips"`
-	Bet        int    `json:"bet"`
-	Position   int    `json:"position"`
-	Active     bool   `json:"active"`
-	Folded     bool   `json:"folded"`
-	LastAction string `json:"lastAction"`
+type GamePlayer struct {
+	Position   int              `json:"position"`
+	Balance    int              `json:"balance"`
+	LastAction string           `json:"lastAction"`
+	Player     Player           `json:"player"`
+	Hand       []Card           `json:"hand"`
+	Status     GamePlayerStatus `json:"status"`
 }
 
-// Game represents a poker game
 type Game struct {
-	ID             string     `json:"id"`
-	Status         GameStatus `json:"status"`
-	Players        []*Player  `json:"players"`
-	CommunityCards []Card     `json:"communityCards"`
-	Pot            int        `json:"pot"`
-	CurrentBet     int        `json:"currentBet"`
-	DealerPosition int        `json:"dealerPosition"`
-	CurrentTurn    int        `json:"currentTurn"`
-	MinBet         int        `json:"minBet"`
-	MaxPlayers     int        `json:"maxPlayers"`
-	CreatedAt      time.Time  `json:"createdAt"`
-	UpdatedAt      time.Time  `json:"updatedAt"`
+	ID         string          `json:"id"`
+	Status     GameStatus      `json:"status"`
+	Players    []*GamePlayer   `json:"players"`
+	Playable   IPlayable       `json:"playable"`
+	MinBet     int             `json:"minBet"`
+	MaxPlayers int             `json:"maxPlayers"`
+	ActionChan chan GameAction `json:"-"`
+	GameType   GameType        `json:"gameType"`
 }
 
-// GameAction represents a player's action in the game
-type GameAction struct {
-	PlayerID string `json:"playerId"`
-	Action   string `json:"action"` // fold, check, call, raise
-	Amount   int    `json:"amount"` // for raise actions
+type GameState struct {
+	Status  GameStatus    `json:"status"`
+	Players []*GamePlayer `json:"players"`
+	State   interface{}   `json:"state"`
 }
 
-// NewGame creates a new poker game instance
-func NewGame(maxPlayers int, minBet int) *Game {
+func NewGame(actionChan chan GameAction, maxPlayers int, minBet int, gameType GameType) *Game {
 	return &Game{
-		ID:             uuid.New().String(),
-		Status:         GameStatusWaiting,
-		Players:        make([]*Player, 0),
-		CommunityCards: make([]Card, 0),
-		MaxPlayers:     maxPlayers,
-		MinBet:         minBet,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
+		ID:         uuid.New().String(),
+		Status:     GameStatusWaiting,
+		Players:    make([]*GamePlayer, 0),
+		MaxPlayers: maxPlayers,
+		MinBet:     minBet,
+		ActionChan: actionChan,
+		GameType:   gameType,
 	}
 }
 
-// AddPlayer adds a new player to the game
-func (g *Game) AddPlayer(player *Player) bool {
+func (g *Game) AddPlayer(player *GamePlayer) error {
 	if len(g.Players) >= g.MaxPlayers {
-		return false
+		return ErrorGameFull
 	}
 
-	player.Position = len(g.Players)
-	g.Players = append(g.Players, player)
-	return true
-}
+	for _, p := range g.Players {
+		if p.Player.ID == player.Player.ID {
+			return ErrorGamePlayerAlreadyIn
+		}
 
-// RemovePlayer removes a player from the game
-func (g *Game) RemovePlayer(playerID string) bool {
-	for i, p := range g.Players {
-		if p.ID == playerID {
-			g.Players = append(g.Players[:i], g.Players[i+1:]...)
-			return true
+		if p.Position == player.Position {
+			return ErrorGamePositionTaken
 		}
 	}
-	return false
+
+	player.Status = GamePlayerStatusWaiting
+	g.Players = append(g.Players, player)
+	return nil
 }
 
-// CanStart checks if the game can be started
+func (g *Game) RemovePlayer(playerID string) error {
+	for i, p := range g.Players {
+		if p.Player.ID == playerID {
+			g.Players = slices.Delete(g.Players, i, i+1)
+			return nil
+		}
+	}
+	return ErrorGamePlayerNotFound
+}
+
 func (g *Game) CanStart() bool {
 	return len(g.Players) >= 2 && g.Status == GameStatusWaiting
+}
+
+func (g *Game) Start() error {
+	if !g.CanStart() {
+		return ErrorGameNotReady
+	}
+
+	err := g.Playable.Start()
+	if err != nil {
+		return err
+	}
+
+	g.Status = GameStatusStarted
+	return nil
+}
+
+func (g *Game) End() error {
+	err := g.Playable.End()
+	if err != nil {
+		return err
+	}
+
+	g.Status = GameStatusFinished
+	return nil
+}
+
+func (g *Game) GetGameState() GameState {
+	return GameState{
+		Status:  g.Status,
+		Players: g.Players,
+		State:   g.Playable.GetGameState(),
+	}
 }

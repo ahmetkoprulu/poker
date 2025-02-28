@@ -7,7 +7,6 @@ import (
 
 	"github.com/ahmetkoprulu/rtrp/game/common/utils"
 	"github.com/ahmetkoprulu/rtrp/game/internal/config"
-	"github.com/ahmetkoprulu/rtrp/game/internal/game"
 	"github.com/ahmetkoprulu/rtrp/game/internal/websocket"
 )
 
@@ -20,11 +19,8 @@ func main() {
 
 	utils.SetJWTSecret(config.JWTSecret)
 
-	gameManager := game.NewGameManager()
-	messageHandler := websocket.NewMessageHandler(gameManager)
-	wsServer := websocket.NewServer(messageHandler)
+	wsServer := websocket.NewServer()
 
-	messageHandler.SetServer(wsServer)
 	go wsServer.Run()
 
 	http.HandleFunc("/ws", wsServer.HandleWebSocket)

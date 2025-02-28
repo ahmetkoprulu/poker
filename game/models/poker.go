@@ -140,7 +140,7 @@ type BettingRound struct {
 	Round      Round
 	CurrentBet int
 	Pot        int
-	Actions    []GameAction
+	// Actions    []GameAction
 }
 
 // NewBettingRound creates a new betting round
@@ -149,6 +149,6 @@ func NewBettingRound(round Round, currentBet int, pot int) *BettingRound {
 		Round:      round,
 		CurrentBet: currentBet,
 		Pot:        pot,
-		Actions:    make([]GameAction, 0),
+		// Actions:    make([]GameAction, 0),
 	}
 }

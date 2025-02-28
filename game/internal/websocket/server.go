@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/ahmetkoprulu/rtrp/game/common/utils"
+	"github.com/ahmetkoprulu/rtrp/game/internal/room"
 	"github.com/ahmetkoprulu/rtrp/game/models"
 	"github.com/gorilla/websocket"
 )
@@ -22,7 +23,6 @@ var upgrader = websocket.Upgrader{
 
 type Client struct {
 	ID       string
-	RoomID   string
 	PlayerID string
 	Conn     *websocket.Conn
 	Server   *Server
@@ -31,29 +31,30 @@ type Client struct {
 }
 
 type Server struct {
-	clients    map[*Client]bool
-	rooms      map[string]*models.Room
-	broadcast  chan []byte
-	register   chan *Client
-	unregister chan *Client
-	mu         sync.RWMutex
-	handler    *MessageHandler
+	clients     map[string]*Client
+	roomManager *room.RoomManager
+	broadcast   chan []byte
+	register    chan *Client
+	unregister  chan *Client
+	mu          sync.RWMutex
+	handler     *MessageHandler
 }
 
-func NewServer(handler *MessageHandler) *Server {
-	defaultRoom := models.NewRoom("room_1", 5, 2) // Create default room 5 players max, 2 min bet
+func NewServer() *Server {
+	roomManager := room.NewRoomManager()
+	roomManager.CreateRoom("room_1", "Default Room", 100, 5, 10, models.GameTypeHoldem)
 
-	// Register the initial game with the game manager
-	handler.gameManager.RegisterGame(defaultRoom.Game)
-
-	return &Server{
-		clients:    make(map[*Client]bool),
-		rooms:      map[string]*models.Room{defaultRoom.ID: defaultRoom},
-		broadcast:  make(chan []byte),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
-		handler:    handler,
+	server := &Server{
+		clients:     make(map[string]*Client),
+		roomManager: roomManager,
+		broadcast:   make(chan []byte),
+		register:    make(chan *Client),
+		unregister:  make(chan *Client),
 	}
+
+	server.handler = NewMessageHandler(server, roomManager)
+
+	return server
 }
 
 func (s *Server) Run() {
@@ -61,25 +62,25 @@ func (s *Server) Run() {
 		select {
 		case client := <-s.register:
 			s.mu.Lock()
-			s.clients[client] = true
+			s.clients[client.PlayerID] = client
 			s.mu.Unlock()
 
 		case client := <-s.unregister:
-			if _, ok := s.clients[client]; ok {
+			if _, ok := s.clients[client.PlayerID]; ok {
 				s.mu.Lock()
-				delete(s.clients, client)
+				delete(s.clients, client.PlayerID)
 				close(client.send)
 				s.mu.Unlock()
 			}
 
 		case message := <-s.broadcast:
 			s.mu.RLock()
-			for client := range s.clients {
+			for _, client := range s.clients {
 				select {
 				case client.send <- message:
 				default:
 					close(client.send)
-					delete(s.clients, client)
+					delete(s.clients, client.PlayerID)
 				}
 			}
 			s.mu.RUnlock()
@@ -101,16 +102,14 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the default room
-	var defaultRoomID string
-	for roomID := range s.rooms {
-		defaultRoomID = roomID
-		break
-	}
+	// // Get the default room
+	// for roomID := range s.rooms {
+	// 	defaultRoomID = roomID
+	// 	break
+	// }
 
 	client := &Client{
 		ID:       userID,
-		RoomID:   defaultRoomID,
 		PlayerID: playerID,
 		Conn:     conn,
 		Server:   s,
@@ -123,37 +122,66 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	go client.writePump()
 }
 
-// GetRoom returns a room by its ID
 func (s *Server) GetRoom(roomID string) *models.Room {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.rooms[roomID]
+	room, err := s.roomManager.GetRoom(roomID)
+	if err != nil {
+		return nil
+	}
+	return room
 }
 
-// BroadcastToRoom broadcasts a message to all clients in a specific room
+func (s *Server) JoinRoom(roomID string, client *Client) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	room, err := s.roomManager.GetRoom(roomID)
+	if err != nil {
+		return err
+	}
+
+	room.Players = append(room.Players, &models.Player{
+		ID:       client.PlayerID,
+		Username: "Guest",
+		Picture:  "https://via.placeholder.com/150",
+		Chips:    1000,
+	})
+
+	s.roomManager.RegisterRoom(room)
+	return nil
+}
+
 func (s *Server) BroadcastToRoom(roomID string, message []byte) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	room, err := s.roomManager.GetRoom(roomID)
+	if err != nil {
+		return
+	}
 
-	for client := range s.clients {
-		if client.RoomID == roomID {
+	for _, player := range room.Players {
+		if client, ok := s.clients[player.ID]; ok {
 			select {
 			case client.send <- message:
 			default:
 				close(client.send)
-				delete(s.clients, client)
+				delete(s.clients, client.PlayerID)
 			}
 		}
 	}
 }
 
-// readPump pumps messages from the WebSocket connection to the hub
 func (c *Client) readPump() {
 	defer func() {
 		// Remove player from game when disconnected
-		room := c.Server.GetRoom(c.RoomID)
+		room, err := c.Server.roomManager.GetRoomByPlayerID(c.PlayerID)
+		if err != nil {
+			return
+		}
+
 		if room != nil && room.Game != nil {
-			if err := c.Server.handler.gameManager.LeaveGame(room.Game.ID, c.PlayerID); err != nil {
+			if err := c.Server.handler.roomManager.LeaveRoom(room.ID, c.PlayerID); err != nil {
 				log.Printf("Error removing player from game: %v", err)
 			}
 			// Broadcast the updated room state to other players
@@ -181,7 +209,6 @@ func (c *Client) readPump() {
 	}
 }
 
-// writePump pumps messages from the hub to the WebSocket connection
 func (c *Client) writePump() {
 	defer func() {
 		c.Conn.Close()
@@ -208,14 +235,21 @@ func (c *Client) writePump() {
 	}
 }
 
-// BroadcastToGame broadcasts a message to all clients in a specific game
-func (s *Server) BroadcastToGame(gameID string, message []byte) {
+func (s *Server) BroadcastToGame(roomID string, message []byte) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	for client := range s.clients {
+	room, err := s.roomManager.GetRoom(roomID)
+	if err != nil {
+		return
+	}
+	game := room.Game
+
+	for _, player := range game.Players {
 		// TODO: Add game ID to client struct and check if client is in the game
-		client.send <- message
+		if client, ok := s.clients[player.Player.ID]; ok {
+			client.send <- message
+		}
 	}
 }
 

@@ -47,12 +47,11 @@ public class WebSocketClientService : IWebSocketClientService
             _logger.LogInformation("Authenticating with email {Email}", email);
             var loginResponse = await _authService.LoginAsync(email, password);
             _token = loginResponse.Token;
-            _playerId = loginResponse.Player.Id;
+            _playerId = loginResponse.User.Player.Id;
 
             // Get player details
             var player = await _authService.GetPlayerAsync(_token);
-            _logger.LogInformation("Authenticated as player {PlayerName} with {Chips} chips",
-                player.Name, player.Chips);
+            _logger.LogInformation("Authenticated as player {PlayerName} with {Chips} chips", player.Username, player.Chips);
 
             // Connect to WebSocket with auth token
             var wsUrl = _configuration["WebSocketUrl"] ?? "ws://localhost:8080/ws";
@@ -75,20 +74,26 @@ public class WebSocketClientService : IWebSocketClientService
         var message = new Message
         {
             Type = MessageType.JoinGame,
-            RoomId = roomId,
-            PlayerId = _playerId
+            Data = new MessageJoinGame
+            {
+                RoomId = roomId,
+                PlayerId = _playerId
+            }
         };
 
         await SendMessageAsync(message);
     }
 
-    public async Task LeaveGameAsync(string gameId)
+    public async Task LeaveGameAsync(string roomId)
     {
         var message = new Message
         {
             Type = MessageType.LeaveGame,
-            GameId = gameId,
-            PlayerId = _playerId
+            Data = new MessageLeaveGame
+            {
+                RoomId = roomId,
+                PlayerId = _playerId
+            }
         };
 
         await SendMessageAsync(message);
@@ -105,9 +110,12 @@ public class WebSocketClientService : IWebSocketClientService
         var message = new Message
         {
             Type = MessageType.GameAction,
-            GameId = _currentGame.Id,
-            PlayerId = _playerId,
-            Data = action
+            Data = new MessageGameAction
+            {
+                RoomId = _currentGame.Id,
+                PlayerId = _playerId,
+                Data = action
+            }
         };
 
         await SendMessageAsync(message);
@@ -126,13 +134,11 @@ public class WebSocketClientService : IWebSocketClientService
         {
             while (_webSocket.State == WebSocketState.Open)
             {
-                var result = await _webSocket.ReceiveAsync(
-                    new ArraySegment<byte>(buffer), _cancellationTokenSource.Token);
+                var result = await _webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), _cancellationTokenSource.Token);
 
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
-                    await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty,
-                        _cancellationTokenSource.Token);
+                    await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, _cancellationTokenSource.Token);
                     break;
                 }
 
@@ -153,9 +159,17 @@ public class WebSocketClientService : IWebSocketClientService
         try
         {
             var message = JsonSerializer.Deserialize<Message>(messageJson);
+            _logger.LogInformation("Received message: {Message}", messageJson);
+            if (message == null)
+            {
+                _logger.LogError("Received null message");
+                return;
+            }
+
+            _logger.LogInformation("Message type: {MessageType}", message.Type);
             switch (message.Type)
             {
-                case MessageType.GameState:
+                case MessageType.GameInfo:
                     var room = JsonSerializer.Deserialize<Room>(message.Data.ToString());
                     if (room?.Game != null)
                     {

@@ -20,7 +20,7 @@ public class LoginRequest
 public class LoginResponse
 {
     [JsonPropertyName("token")] public string Token { get; set; }
-    [JsonPropertyName("user")] public Player Player { get; set; }
+    [JsonPropertyName("user")] public User User { get; set; }
 }
 
 public class User
@@ -32,11 +32,9 @@ public class User
 public class Player
 {
     [JsonPropertyName("id")] public string Id { get; set; }
-    [JsonPropertyName("email")] public string Email { get; set; }
-    [JsonPropertyName("name")] public string Name { get; set; }
+    [JsonPropertyName("username")] public string Username { get; set; }
+    [JsonPropertyName("profile_pic_url")] public string ProfilePicURL { get; set; }
     [JsonPropertyName("chips")] public int Chips { get; set; }
-    [JsonPropertyName("createdAt")] public DateTime CreatedAt { get; set; }
-    [JsonPropertyName("updatedAt")] public DateTime UpdatedAt { get; set; }
 }
 
 public class RegisterRequest
