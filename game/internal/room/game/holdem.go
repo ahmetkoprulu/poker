@@ -40,9 +40,7 @@ type HoldemAction struct {
 }
 
 type HoldemState struct {
-	CommunityCards []models.Card
-	Pot            int
-
+	Pot          int
 	CurrentRound HoldemRound
 	CurrentTurn  int
 	CurrentBet   int
@@ -57,6 +55,7 @@ type HoldemState struct {
 	LastRaisePosition int
 	PlayerBets        map[string]int
 	PlayerHands       map[string][]models.Card
+	CommunityCards    []models.Card
 
 	// Side pots for all-in situations
 	// SidePots []SidePot
@@ -100,8 +99,10 @@ func NewHoldem(game *models.Game) *Holdem {
 			BigBlindIndex:     0,
 			RoundComplete:     false,
 			LastRaisePosition: 0,
-			PlayerBets:        make(map[string]int),
-			PlayerHands:       make(map[string][]models.Card),
+
+			PlayerBets:     make(map[string]int),
+			PlayerHands:    make(map[string][]models.Card),
+			CommunityCards: make([]models.Card, 0),
 		},
 		actionsChannel: game.ActionChan,
 		deck:           models.NewDeck(),
@@ -348,6 +349,14 @@ func (h *Holdem) StartPreFlopRound() {
 	h.State.RoundComplete = false
 	h.State.LastRaisePosition = -1
 
+	startingPos := h.State.BigBlindIndex + 1 // In PreFlop, action starts with player after big blind
+
+	activePlayers := h.GetPlayersInRound()
+	numPlayers := len(activePlayers)
+
+	// Set initial turn
+	h.State.CurrentTurn = startingPos % numPlayers
+
 	h.RotateDealerButton()
 	if !h.SetBlindPositions() {
 		log.Printf("[ERROR] Not enough players to set blind positions")
@@ -465,9 +474,39 @@ func (h *Holdem) BettingRound() error {
 		h.State.PlayerBets[player.Player.ID] = 0
 	}
 
+	// Set starting position based on the round
+	startingPos := h.State.DealerIndex + 1
+	if h.State.CurrentRound == PreFlop {
+		// In PreFlop, action starts with player after big blind
+		startingPos = h.State.BigBlindIndex + 1
+	}
+
+	activePlayers := h.GetPlayersInRound()
+	numPlayers := len(activePlayers)
+
+	// Set initial turn
+	h.State.CurrentTurn = startingPos % numPlayers
+	h.State.LastRaisePosition = h.State.CurrentTurn
+
+	// Apply blinds for PreFlop round
+	if h.State.CurrentRound == PreFlop {
+		// Small blind
+		smallBlindPlayer := activePlayers[h.State.SmallBlindIndex]
+		h.State.PlayerBets[smallBlindPlayer.Player.ID] = h.State.SmallBlindAmount
+
+		// Big blind
+		bigBlindPlayer := activePlayers[h.State.BigBlindIndex]
+		h.State.PlayerBets[bigBlindPlayer.Player.ID] = h.State.BigBlindAmount
+		h.State.CurrentBet = h.State.BigBlindAmount
+		h.State.LastRaisePosition = h.State.BigBlindIndex
+	}
+
 	h.State.RoundComplete = false
 	for !h.State.RoundComplete {
 		log.Printf("[DEBUG] Round state - CurrentTurn: %d, RoundComplete: %v", h.State.CurrentTurn, h.State.RoundComplete)
+		// Get current player
+		currentPlayerIndex := h.State.CurrentTurn % numPlayers
+		currentPlayer := activePlayers[currentPlayerIndex]
 		if h.CheckRoundComplete() {
 			h.State.RoundComplete = true
 			log.Printf("[DEBUG] Round completed naturally")

@@ -11,6 +11,7 @@ const (
 	EventTypeSlotMachine EventType = 1
 	EventTypeDiceGame    EventType = 2
 	EventTypePathGame    EventType = 3
+	EventTypeWackAMole   EventType = 4
 )
 
 const (

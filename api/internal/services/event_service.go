@@ -124,7 +124,12 @@ func (s *EventService) GetOrCreatePlayerEvent(ctx context.Context, playerID, sch
 		return nil, err
 	}
 
-	state := game.GetInitialState()
+	event, err := s.store.GetEvent(ctx, schedule.EventID)
+	if err != nil {
+		return nil, err
+	}
+
+	state := game.GetInitialState(*event)
 	playerEvent = &models.PlayerEvent{
 		ID:         uuid.New().String(),
 		PlayerID:   playerID,
@@ -221,4 +226,39 @@ func (s *EventService) PlayEvent(ctx context.Context, playerID, scheduleID strin
 	}
 
 	return playResult, nil
+}
+
+func (s *EventService) RefreshPlayerEventState(ctx context.Context, playerID, scheduleID string) (*models.PlayerEvent, error) {
+	playerEvent, err := s.store.GetPlayerEvent(ctx, playerID, scheduleID)
+	if err != nil {
+		return nil, err
+	}
+
+	schedule, err := s.store.GetSchedule(ctx, scheduleID)
+	if err != nil {
+		return nil, err
+	}
+
+	if !schedule.IsActive {
+		return nil, ErrScheduleNotActive
+	}
+
+	game, err := s.gameFactory.CreateEventGame(schedule.Event.Type)
+	if err != nil {
+		return nil, err
+	}
+
+	event, err := s.store.GetEvent(ctx, schedule.EventID)
+	if err != nil {
+		return nil, err
+	}
+
+	state := game.GetInitialState(*event)
+	playerEvent.State = state
+
+	if err := s.store.UpdatePlayerEvent(ctx, playerEvent); err != nil {
+		return nil, err
+	}
+
+	return playerEvent, nil
 }

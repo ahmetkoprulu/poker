@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	ErrInvalidPosition = errors.New("invalid position")
+	ErrInvalidPosition = errors.New("invalid_position")
 )
 
 type PathGameConfig struct {
@@ -151,7 +151,7 @@ func (g *PathGame) UpdateState(ctx context.Context, playerEvent *models.PlayerEv
 	return nil
 }
 
-func (g *PathGame) GetInitialState() map[string]interface{} {
+func (g *PathGame) GetInitialState(event models.Event) map[string]interface{} {
 	return stateToMap(PathGameState{
 		TotalSteps:  0,
 		CurrentStep: 0,

@@ -31,6 +31,7 @@ func (h *EventHandler) RegisterRoutes(router *gin.RouterGroup, authMiddleware gi
 		events.GET("/schedules/actives", h.ListActiveSchedules)
 		events.GET("/schedules/:id", h.GetSchedule)
 		events.GET("/schedules/:id/player", authMiddleware, h.GetPlayerEvent)
+		events.POST("/schedules/:id/player/refresh", authMiddleware, h.RefreshPlayerEvent)
 	}
 }
 
@@ -276,4 +277,25 @@ func (h *EventHandler) GetPlayerEvent(c *gin.Context) {
 	}
 
 	Ok(c, events)
+}
+
+// @Summary Refresh player event state
+// @Description Player event state'ini yenilemek icin kullanilir.
+// @Tags events
+// @Produce json
+// @Param id path string true "Schedule ID"
+// @Security Bearer
+// @Success 200 {object} models.PlayerEvent
+// @Failure 400 {object} ErrorResponse
+// @Router /events/schedules/{id}/player/refresh [post]
+func (h *EventHandler) RefreshPlayerEvent(c *gin.Context) {
+	playerId := c.GetString("playerID")
+	scheduleId := c.Param("id")
+	playerEvent, err := h.service.RefreshPlayerEventState(context.Background(), playerId, scheduleId)
+	if err != nil {
+		BadRequest(c, err.Error())
+		return
+	}
+
+	Ok(c, playerEvent)
 }

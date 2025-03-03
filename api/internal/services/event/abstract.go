@@ -10,9 +10,10 @@ import (
 )
 
 var (
-	ErrGameCompleted    = errors.New("game already completed")
-	ErrInvalidConfig    = errors.New("invalid game configuration")
-	ErrNotEnoughTickets = errors.New("not enough tickets")
+	ErrGameCompleted    = errors.New("game_completed")
+	ErrInvalidConfig    = errors.New("invalid_game_config")
+	ErrNotEnoughTickets = errors.New("not_enough_tickets")
+	ErrInvalidState     = errors.New("invalid_game_state")
 )
 
 type EventGame interface {
@@ -21,7 +22,7 @@ type EventGame interface {
 	ProcessPlay(ctx context.Context, req *models.EventPlayRequest) (*models.EventPlayResult, error)
 	// CalculateRewards(ctx context.Context, req *models.EventPlayRequest, result *models.EventPlayResult) error
 	UpdateState(ctx context.Context, playerEvent *models.PlayerEvent, result *models.EventPlayResult) error
-	GetInitialState() map[string]interface{}
+	GetInitialState(event models.Event) map[string]interface{}
 }
 
 type BaseEventGame struct {
@@ -49,6 +50,8 @@ func (f *EventGameFactory) CreateEventGame(eventType models.EventType) (EventGam
 	switch eventType {
 	case models.EventTypePathGame:
 		return NewPathGame(), nil
+	case models.EventTypeWackAMole:
+		return NewPushEvent(), nil
 	default:
 		return nil, fmt.Errorf("unknown game type: %v", eventType)
 	}
