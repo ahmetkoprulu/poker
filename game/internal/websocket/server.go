@@ -89,7 +89,13 @@ func (s *Server) Run() {
 }
 
 func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
-	userID, playerID, err := validateToken(r)
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		http.Error(w, "Token is required", http.StatusUnauthorized)
+		return
+	}
+
+	userID, playerID, err := validateTokenAsString(token)
 	if err != nil {
 		log.Printf("Failed to validate token: %v", err)
 		http.Error(w, err.Error(), http.StatusUnauthorized)
@@ -265,6 +271,15 @@ func validateToken(r *http.Request) (string, string, error) {
 	}
 
 	token := tokenParts[1]
+	claims, err := utils.ValidateJwTTokenWithClaims(token)
+	if err != nil {
+		return "", "", err
+	}
+
+	return claims.UserID, claims.PlayerID, nil
+}
+
+func validateTokenAsString(token string) (string, string, error) {
 	claims, err := utils.ValidateJwTTokenWithClaims(token)
 	if err != nil {
 		return "", "", err

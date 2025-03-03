@@ -130,35 +130,34 @@ func (h *MessageHandler) handleJoinGame(client *Client, msg models.MessageJoinGa
 		return h.sendError(client, "Room not found")
 	}
 
-	log.Printf("[INFO] Player attempting to join - RoomID: %s, PlayerID: %s, GameStatus: %s, PlayerCount: %d",
-		room.ID, client.PlayerID, room.Game.Status, len(room.Game.Players))
+	log.Printf("[INFO] Player attempting to join - RoomID: %s, PlayerID: %s, GameStatus: %s, PlayerCount: %d", room.ID, client.PlayerID, room.Game.Status, len(room.Game.Players))
 
-	if room.IsGameActive() {
-		log.Printf("[INFO] Cannot join active game - RoomID: %s, PlayerID: %s, GameStatus: %s",
-			room.ID, client.PlayerID, room.Game.Status)
-		return h.sendError(client, "Cannot join: Game is already in progress")
-	}
+	// if room.IsGameActive() {
+	// 	log.Printf("[INFO] Cannot join active game - RoomID: %s, PlayerID: %s, GameStatus: %s", room.ID, client.PlayerID, room.Game.Status)
+	// 	return h.sendError(client, "Cannot join: Game is already in progress")
+	// }
 
 	// Ensure there's a game to join
-	room.EnsureGameExists()
+	// room.EnsureGameExists()
 
-	player := &models.GamePlayer{
-		Player: models.Player{
-			ID:       client.PlayerID,
-			Username: "Guest",
-			Picture:  "https://via.placeholder.com/150",
-			Chips:    1000,
-		},
+	player := models.Player{
+		ID:       client.PlayerID,
+		Username: "Guest",
+		Picture:  "https://via.placeholder.com/150",
+		Chips:    1000,
 	}
 
-	if err := h.roomManager.JoinRoom(room.ID, &player.Player); err != nil {
-		log.Printf("[ERROR] Failed to join game - RoomID: %s, PlayerID: %s, Error: %v",
-			room.ID, client.PlayerID, err)
+	if err := h.roomManager.JoinRoom(room.ID, &player); err != nil {
+		log.Printf("[ERROR] Failed to join room - RoomID: %s, PlayerID: %s, Error: %v", room.ID, client.PlayerID, err)
 		return h.sendError(client, fmt.Sprintf("Failed to join game: %v", err))
 	}
 
-	log.Printf("[INFO] Player joined successfully - RoomID: %s, PlayerID: %s, GameID: %s, PlayerCount: %d",
-		room.ID, client.PlayerID, room.Game.ID, len(room.Game.Players))
+	if err := room.Game.AddPlayer(msg.Position, &player); err != nil {
+		log.Printf("[ERROR] Failed to add player to game - RoomID: %s, PlayerID: %s, Error: %v", room.ID, client.PlayerID, err)
+		return h.sendError(client, fmt.Sprintf("Failed to join game: %v", err))
+	}
+
+	log.Printf("[INFO] Player joined successfully - RoomID: %s, PlayerID: %s, GameID: %s, PlayerCount: %d", room.ID, client.PlayerID, room.Game.ID, len(room.Game.Players))
 
 	h.broadcastRoomState(room)
 	return nil
@@ -167,19 +166,16 @@ func (h *MessageHandler) handleJoinGame(client *Client, msg models.MessageJoinGa
 func (h *MessageHandler) handleLeaveGame(client *Client, msg models.MessageLeaveGame) error {
 	room := h.server.GetRoom(msg.RoomID)
 	if room == nil {
-		log.Printf("[ERROR] Room not found for leave game - RoomID: %s, PlayerID: %s",
-			msg.RoomID, client.PlayerID)
+		log.Printf("[ERROR] Room not found for leave game - RoomID: %s, PlayerID: %s", msg.RoomID, client.PlayerID)
 		return h.sendError(client, "Room not found")
 	}
 
 	if err := h.roomManager.LeaveRoom(room.ID, client.PlayerID); err != nil {
-		log.Printf("[ERROR] Failed to leave game - RoomID: %s, PlayerID: %s, Error: %v",
-			room.ID, client.PlayerID, err)
+		log.Printf("[ERROR] Failed to leave game - RoomID: %s, PlayerID: %s, Error: %v", room.ID, client.PlayerID, err)
 		return h.sendError(client, fmt.Sprintf("Failed to leave game: %v", err))
 	}
 
-	log.Printf("[INFO] Player left game - RoomID: %s, PlayerID: %s, RemainingPlayers: %d",
-		room.ID, client.PlayerID, len(room.Game.Players))
+	log.Printf("[INFO] Player left game - RoomID: %s, PlayerID: %s, RemainingPlayers: %d", room.ID, client.PlayerID, len(room.Game.Players))
 
 	h.broadcastRoomState(room)
 	return nil
@@ -188,22 +184,18 @@ func (h *MessageHandler) handleLeaveGame(client *Client, msg models.MessageLeave
 func (h *MessageHandler) handleStartGame(client *Client, msg models.MessageStartGame) error {
 	room := h.server.GetRoom(msg.RoomID)
 	if room == nil {
-		log.Printf("[ERROR] Room not found for game start - RoomID: %s, PlayerID: %s",
-			msg.RoomID, client.PlayerID)
+		log.Printf("[ERROR] Room not found for game start - RoomID: %s, PlayerID: %s", msg.RoomID, client.PlayerID)
 		return h.sendError(client, "Room not found")
 	}
 
-	log.Printf("[INFO] Attempting to start game - RoomID: %s, GameID: %s, PlayerCount: %d",
-		room.ID, room.Game.ID, len(room.Game.Players))
+	log.Printf("[INFO] Attempting to start game - RoomID: %s, GameID: %s, PlayerCount: %d", room.ID, room.Game.ID, len(room.Game.Players))
 
 	if err := h.roomManager.StartGame(room.Game.ID); err != nil {
-		log.Printf("[ERROR] Failed to start game - RoomID: %s, GameID: %s, Error: %v",
-			room.ID, room.Game.ID, err)
+		log.Printf("[ERROR] Failed to start game - RoomID: %s, GameID: %s, Error: %v", room.ID, room.Game.ID, err)
 		return h.sendError(client, fmt.Sprintf("Failed to start game: %v", err))
 	}
 
-	log.Printf("[INFO] Game started successfully - RoomID: %s, GameID: %s, PlayerCount: %d",
-		room.ID, room.Game.ID, len(room.Game.Players))
+	log.Printf("[INFO] Game started successfully - RoomID: %s, GameID: %s, PlayerCount: %d", room.ID, room.Game.ID, len(room.Game.Players))
 
 	h.broadcastRoomState(room)
 	return nil
@@ -212,15 +204,13 @@ func (h *MessageHandler) handleStartGame(client *Client, msg models.MessageStart
 func (h *MessageHandler) handleGameAction(client *Client, msg models.MessageGameAction) error {
 	room := h.server.GetRoom(msg.RoomID)
 	if room == nil {
-		log.Printf("[ERROR] Room not found for game action - RoomID: %s, PlayerID: %s",
-			msg.RoomID, client.PlayerID)
+		log.Printf("[ERROR] Room not found for game action - RoomID: %s, PlayerID: %s", msg.RoomID, client.PlayerID)
 		return h.sendError(client, "Room not found")
 	}
 
 	game := room.Game
 	if game == nil || game.Status != models.GameStatusStarted {
-		log.Printf("[ERROR] Invalid game state for action - RoomID: %s, GameID: %s, Status: %s",
-			room.ID, game.ID, game.Status)
+		log.Printf("[ERROR] Invalid game state for action - RoomID: %s, GameID: %s, Status: %s", room.ID, game.ID, game.Status)
 		return h.sendError(client, "Game is not in progress")
 	}
 
@@ -233,8 +223,7 @@ func (h *MessageHandler) handleGameAction(client *Client, msg models.MessageGame
 	}
 
 	if currentPlayer == nil {
-		log.Printf("[ERROR] Player not found in game - GameID: %s, PlayerID: %s",
-			game.ID, client.PlayerID)
+		log.Printf("[ERROR] Player not found in game - GameID: %s, PlayerID: %s", game.ID, client.PlayerID)
 		return h.sendError(client, "Player not found in game")
 	}
 
@@ -243,8 +232,7 @@ func (h *MessageHandler) handleGameAction(client *Client, msg models.MessageGame
 		return err
 	}
 
-	log.Printf("[INFO] Processing game action - GameID: %s, PlayerID: %s, Action: %s",
-		game.ID, client.PlayerID, action.Action)
+	log.Printf("[INFO] Processing game action - GameID: %s, PlayerID: %s, Action: %s", game.ID, client.PlayerID, action.Action)
 
 	if err := h.roomManager.ProcessAction(room.ID, msg.Data); err != nil {
 		return h.sendError(client, fmt.Sprintf("Failed to process action: %v", err))
@@ -272,7 +260,7 @@ func (h *MessageHandler) sendError(client *Client, errorMsg string) error {
 func (h *MessageHandler) broadcastRoomState(room *models.Room) {
 	stateMsg := models.Response{
 		Type: models.MessageTypeGameInfo,
-		Data: room,
+		Data: room.GetRoomState(),
 	}
 
 	msgBytes, err := json.Marshal(stateMsg)
@@ -281,8 +269,7 @@ func (h *MessageHandler) broadcastRoomState(room *models.Room) {
 		return
 	}
 
-	log.Printf("[INFO] Broadcasting room state - RoomID: %s, GameID: %s, GameStatus: %s, PlayerCount: %d",
-		room.ID, room.Game.ID, room.Game.Status, len(room.Game.Players))
+	log.Printf("[INFO] Broadcasting room state - RoomID: %s, GameID: %s, GameStatus: %s, PlayerCount: %d", room.ID, room.Game.ID, room.Game.Status, len(room.Game.Players))
 
 	h.server.BroadcastToRoom(room.ID, msgBytes)
 }

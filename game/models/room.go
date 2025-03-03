@@ -45,20 +45,14 @@ func NewRoom(id, name string, maxPlayers, maxGamePlayers int, minBet int, gameTy
 		ActionChannel: make(chan GameAction),
 	}
 
-	room.Game = NewGame(room.ActionChannel, maxGamePlayers, minBet, gameType)
 	return room
 }
 
-func (r *Room) EnsureGameExists() {
-	if r.Game == nil || r.Game.Status == GameStatusFinished {
-		r.Game = NewGame(r.ActionChannel, r.MaxPlayers, r.MinBet, r.Game.GameType)
-	}
-}
-
-func (r *Room) StartNewGame() *Game {
-	r.Game = NewGame(r.ActionChannel, r.MaxPlayers, r.MinBet, r.Game.GameType)
-	return r.Game
-}
+// func (r *Room) EnsureGameExists() {
+// 	if r.Game == nil || r.Game.Status == GameStatusEnd {
+// 		r.Game = NewGame(r.ActionChannel, r.MaxPlayers, r.MinBet, r.Game.GameType)
+// 	}
+// }
 
 func (r *Room) AddPlayer(player *Player) error {
 	if len(r.Players) >= r.MaxPlayers {
@@ -89,12 +83,20 @@ func (r *Room) GetRoomState() RoomState {
 	gameState := r.Game.GetGameState()
 
 	return RoomState{
-		RoomID:    r.ID,
-		GameState: gameState,
+		RoomID:     r.ID,
+		Status:     r.Status,
+		Players:    r.Players,
+		MaxPlayers: r.MaxPlayers,
+		MinBet:     r.MinBet,
+		GameState:  gameState,
 	}
 }
 
 type RoomState struct {
-	RoomID    string    `json:"roomId"`
-	GameState GameState `json:"gameState"`
+	RoomID     string     `json:"roomId"`
+	Status     RoomStatus `json:"status"`
+	MaxPlayers int        `json:"maxPlayers"`
+	MinBet     int        `json:"minBet"`
+	Players    []*Player  `json:"players"`
+	GameState  GameState  `json:"gameState"`
 }

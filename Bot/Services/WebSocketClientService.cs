@@ -69,7 +69,7 @@ public class WebSocketClientService : IWebSocketClientService
         }
     }
 
-    public async Task JoinGameAsync(string roomId)
+    public async Task JoinGameAsync(string roomId, int position = 2)
     {
         var message = new Message
         {
@@ -77,7 +77,8 @@ public class WebSocketClientService : IWebSocketClientService
             Data = new MessageJoinGame
             {
                 RoomId = roomId,
-                PlayerId = _playerId
+                PlayerId = _playerId,
+                Position = position
             }
         };
 

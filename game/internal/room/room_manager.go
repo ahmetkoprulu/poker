@@ -27,6 +27,7 @@ func (rm *RoomManager) CreateRoom(id, name string, maxPlayers, maxGamePlayers, m
 
 	switch gameType {
 	case models.GameTypeHoldem:
+		room.Game = models.NewGame(room.ActionChannel, maxPlayers, minBet, gameType)
 		room.Game.Playable = game.NewHoldem(room.Game)
 	default:
 		return nil, fmt.Errorf("unsupported game type: %s", gameType)
@@ -130,7 +131,7 @@ func (rm *RoomManager) LeaveRoom(roomID string, playerID string) error {
 	if room.Game.Status == models.GameStatusStarted && len(room.Game.Players) < 2 {
 		log.Printf("[INFO] Ending game due to insufficient players - RoomID: %s, RemainingPlayers: %d",
 			roomID, len(room.Game.Players))
-		room.Game.Status = models.GameStatusFinished
+		room.Game.Status = models.GameStatusEnd
 	}
 
 	log.Printf("[INFO] Player removed from room - RoomID: %s, PlayerID: %s, RemainingPlayers: %d",

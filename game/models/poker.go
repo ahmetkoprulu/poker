@@ -21,22 +21,22 @@ const (
 )
 
 // Value represents a card value
-type Value string
+type Value int
 
 const (
-	Two   Value = "2"
-	Three Value = "3"
-	Four  Value = "4"
-	Five  Value = "5"
-	Six   Value = "6"
-	Seven Value = "7"
-	Eight Value = "8"
-	Nine  Value = "9"
-	Ten   Value = "10"
-	Jack  Value = "J"
-	Queen Value = "Q"
-	King  Value = "K"
-	Ace   Value = "A"
+	Two   Value = 2
+	Three Value = 3
+	Four  Value = 4
+	Five  Value = 5
+	Six   Value = 6
+	Seven Value = 7
+	Eight Value = 8
+	Nine  Value = 9
+	Ten   Value = 10
+	Jack  Value = 11
+	Queen Value = 12
+	King  Value = 13
+	Ace   Value = 14
 )
 
 // Round represents a betting round in poker
@@ -80,12 +80,13 @@ func NewDeck() *Deck {
 		for _, value := range values {
 			deck.Cards = append(deck.Cards, Card{
 				Suit:   string(suit),
-				Value:  string(value),
+				Value:  int(value),
 				Hidden: true,
 			})
 		}
 	}
 
+	deck.Shuffle()
 	return deck
 }
 
@@ -132,23 +133,5 @@ func EvaluateHand(playerCards []Card, communityCards []Card) PokerHand {
 		Cards: allCards,
 		Rank:  HighCard,
 		Value: 0,
-	}
-}
-
-// BettingRound manages a single round of betting
-type BettingRound struct {
-	Round      Round
-	CurrentBet int
-	Pot        int
-	// Actions    []GameAction
-}
-
-// NewBettingRound creates a new betting round
-func NewBettingRound(round Round, currentBet int, pot int) *BettingRound {
-	return &BettingRound{
-		Round:      round,
-		CurrentBet: currentBet,
-		Pot:        pot,
-		// Actions:    make([]GameAction, 0),
 	}
 }

@@ -5,7 +5,7 @@ namespace Bot.Services;
 public interface IWebSocketClientService : IDisposable
 {
     Task StartAsync();
-    Task JoinGameAsync(string roomId);
+    Task JoinGameAsync(string roomId, int position = 2);
     Task LeaveGameAsync(string gameId);
     Task SendGameActionAsync(GameAction action);
     Task<Game> GetGameStateAsync(string gameId);

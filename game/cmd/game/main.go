@@ -23,6 +23,7 @@ func main() {
 
 	go wsServer.Run()
 
+	http.Handle("/", http.FileServer(http.Dir("./public")))
 	http.HandleFunc("/ws", wsServer.HandleWebSocket)
 	log.Println("Starting game server on :8080...")
 	log.Println("Default room created and ready for connections")

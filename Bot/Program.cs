@@ -22,9 +22,10 @@ public class Program
 
             // Join a game room
             var roomId = host.Services.GetRequiredService<IConfiguration>()["RoomId"];
+            var position = host.Services.GetRequiredService<IConfiguration>()["Position"];
             if (!string.IsNullOrEmpty(roomId))
             {
-                await webSocketClient.JoinGameAsync(roomId);
+                await webSocketClient.JoinGameAsync(roomId, int.Parse(position));
                 logger.LogInformation("Joined game room: {RoomId}", roomId);
             }
 

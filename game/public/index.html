@@ -1,0 +1,1488 @@
+<div class="game-container">
+    <div class="header">
+        <h1>Texas Hold'em Poker</h1>
+    </div>
+
+    <!-- Login Modal -->
+    <div id="login-modal" class="modal">
+        <div class="modal-content">
+            <h2>Login</h2>
+            <div class="login-form">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" placeholder="Enter username">
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" placeholder="Enter password">
+                </div>
+                <div class="form-actions">
+                    <button id="login-btn" class="login-btn">Login</button>
+                    <button id="guest-login-btn" class="guest-btn">Play as Guest</button>
+                </div>
+                <div id="login-error" class="error-message"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Position Selection Modal -->
+    <div id="position-modal" class="modal">
+        <div class="modal-content">
+            <h2>Select Position</h2>
+            <div class="position-selection">
+                <p>Choose your seat at the table:</p>
+                <div class="position-grid">
+                    <button class="position-btn" data-position="0">Seat 1</button>
+                    <button class="position-btn" data-position="1">Seat 2</button>
+                    <button class="position-btn" data-position="2">Seat 3</button>
+                    <button class="position-btn" data-position="3">Seat 4</button>
+                    <button class="position-btn" data-position="4">Seat 5</button>
+                    <button class="position-btn" data-position="5">Seat 6</button>
+                    <button class="position-btn" data-position="6">Seat 7</button>
+                    <button class="position-btn" data-position="7">Seat 8</button>
+                    <button class="position-btn" data-position="8">Seat 9</button>
+                </div>
+                <div class="position-actions">
+                    <button id="cancel-position-btn" class="cancel-btn">Cancel</button>
+                    <button id="auto-position-btn" class="auto-btn">Auto Seat</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="game-controls">
+        <button id="connect-btn" class="control-btn">Connect</button>
+        <button id="join-btn" class="control-btn" disabled>Join Game</button>
+        <button id="demo-btn" class="control-btn">Load Demo</button>
+        <button id="logout-btn" class="control-btn">Logout</button>
+    </div>
+
+    <div class="poker-table">
+        <div class="community-cards-container">
+            <div id="community-cards" class="community-cards"></div>
+        </div>
+
+        <div class="pot">
+            Pot: <span id="pot-amount" class="pot-amount">$0</span>
+        </div>
+
+        <div id="players" class="players"></div>
+    </div>
+
+    <div class="player-actions">
+        <button class="action-btn fold">Fold</button>
+        <button class="action-btn check">Check</button>
+        <button class="action-btn call">Call $0</button>
+        <div class="raise-container">
+            <button class="action-btn raise">Raise</button>
+            <input type="number" class="raise-amount" id="raise-amount" min="0" value="0" step="10">
+        </div>
+        <button class="action-btn all-in">All In</button>
+    </div>
+
+    <div class="game-log-container">
+        <h3>Game Log</h3>
+        <div id="game-log" class="game-log"></div>
+    </div>
+</div>
+
+<!-- Debug Panel -->
+<div class="debug-panel">
+    <div class="debug-header">
+        <h3>Debug Panel</h3>
+        <button id="toggle-debug-btn" class="toggle-debug-btn">Show/Hide</button>
+    </div>
+    <div id="debug-content" class="debug-content">
+        <h4>Game State:</h4>
+        <pre id="game-state-json" class="json-display"></pre>
+    </div>
+</div>
+
+<style>
+    body {
+        font-family: 'Arial', sans-serif;
+        background-color: #1a5d24;
+        color: white;
+        margin: 0;
+        padding: 20px;
+    }
+
+    .game-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+
+    .header {
+        text-align: center;
+        margin-bottom: 20px;
+    }
+
+    .header h1 {
+        margin: 0;
+        color: #f1c40f;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+    }
+
+    /* Modal styles */
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.7);
+        overflow: auto;
+    }
+
+    .modal-content {
+        background-color: #0e3a15;
+        margin: 15% auto;
+        padding: 20px;
+        border: 2px solid #0a290f;
+        border-radius: 10px;
+        width: 300px;
+        box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+    }
+
+    .login-form {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+    }
+
+    .form-group label {
+        font-weight: bold;
+    }
+
+    .form-group input {
+        padding: 8px;
+        border-radius: 5px;
+        border: 1px solid #2e8239;
+        background-color: #0a290f;
+        color: white;
+    }
+
+    .form-actions {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 10px;
+    }
+
+    .login-btn,
+    .guest-btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: all 0.2s;
+    }
+
+    .login-btn {
+        background-color: #2ecc71;
+        color: white;
+    }
+
+    .guest-btn {
+        background-color: #3498db;
+        color: white;
+    }
+
+    .login-btn:hover,
+    .guest-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .error-message {
+        color: #e74c3c;
+        font-size: 14px;
+        text-align: center;
+        min-height: 20px;
+    }
+
+    /* Game controls */
+    .game-controls {
+        display: flex;
+        justify-content: center;
+        gap: 15px;
+        margin-bottom: 20px;
+    }
+
+    .control-btn {
+        padding: 10px 20px;
+        background-color: #3498db;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: all 0.2s;
+    }
+
+    .control-btn:hover:not(:disabled) {
+        background-color: #2980b9;
+        transform: translateY(-2px);
+    }
+
+    .control-btn:disabled {
+        background-color: #95a5a6;
+        cursor: not-allowed;
+        opacity: 0.7;
+    }
+
+    /* Poker table */
+    .poker-table {
+        background-color: #0e3a15;
+        border-radius: 200px;
+        padding: 40px;
+        position: relative;
+        min-height: 400px;
+        border: 10px solid #0a290f;
+        box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* Community cards */
+    .community-cards-container {
+        margin-bottom: 30px;
+    }
+
+    .community-cards {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+    }
+
+    .card {
+        width: 80px;
+        height: 120px;
+        background-color: white;
+        border-radius: 5px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 5px;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+        color: black;
+        position: relative;
+    }
+
+    .card.red {
+        color: #e74c3c;
+    }
+
+    .card .value {
+        font-size: 24px;
+        font-weight: bold;
+        margin-left: 5px;
+    }
+
+    .card .suit {
+        font-size: 36px;
+        text-align: center;
+    }
+
+    .card.placeholder {
+        background-color: rgba(255, 255, 255, 0.1);
+        border: 2px dashed rgba(255, 255, 255, 0.3);
+    }
+
+    /* Pot */
+    .pot {
+        font-size: 24px;
+        font-weight: bold;
+        color: #f1c40f;
+        text-align: center;
+        margin-bottom: 30px;
+    }
+
+    /* Players */
+    .players {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-around;
+        width: 100%;
+    }
+
+    .player {
+        background-color: rgba(0, 0, 0, 0.3);
+        border-radius: 10px;
+        padding: 15px;
+        margin: 10px;
+        width: 180px;
+        text-align: center;
+        position: relative;
+    }
+
+    .player.current-player {
+        background-color: rgba(46, 204, 113, 0.3);
+        border: 2px solid #2ecc71;
+        box-shadow: 0 0 10px rgba(46, 204, 113, 0.5);
+    }
+
+    .player-name {
+        font-weight: bold;
+        font-size: 18px;
+        margin-bottom: 5px;
+    }
+
+    .player-balance {
+        color: #f1c40f;
+        margin-bottom: 10px;
+    }
+
+    .player-cards {
+        display: flex;
+        justify-content: center;
+        gap: 5px;
+        margin-bottom: 10px;
+    }
+
+    .player-cards .card {
+        width: 60px;
+        height: 90px;
+    }
+
+    .player-status {
+        font-size: 14px;
+        padding: 3px 8px;
+        border-radius: 10px;
+        display: inline-block;
+    }
+
+    .player-status.active {
+        background-color: #e74c3c;
+        animation: pulse 1.5s infinite;
+    }
+
+    .player-status.dealer::before {
+        content: 'D';
+        background-color: white;
+        color: black;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        display: inline-block;
+        margin-right: 5px;
+        font-weight: bold;
+    }
+
+    .player-status.sb::before {
+        content: 'SB';
+        background-color: #3498db;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        display: inline-block;
+        margin-right: 5px;
+        font-size: 10px;
+        font-weight: bold;
+    }
+
+    .player-status.bb::before {
+        content: 'BB';
+        background-color: #e67e22;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        display: inline-block;
+        margin-right: 5px;
+        font-size: 10px;
+        font-weight: bold;
+    }
+
+    @keyframes pulse {
+        0% {
+            opacity: 1;
+        }
+
+        50% {
+            opacity: 0.5;
+        }
+
+        100% {
+            opacity: 1;
+        }
+    }
+
+    /* Player actions */
+    .player-actions {
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+        margin-top: 20px;
+        flex-wrap: wrap;
+    }
+
+    .action-btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: all 0.2s;
+    }
+
+    .action-btn:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .action-btn:disabled {
+        background-color: #95a5a6;
+        cursor: not-allowed;
+        opacity: 0.7;
+    }
+
+    .action-btn.fold {
+        background-color: #e74c3c;
+        color: white;
+    }
+
+    .action-btn.check {
+        background-color: #2ecc71;
+        color: white;
+    }
+
+    .action-btn.call {
+        background-color: #3498db;
+        color: white;
+    }
+
+    .action-btn.raise {
+        background-color: #f39c12;
+        color: white;
+    }
+
+    .action-btn.all-in {
+        background-color: #9b59b6;
+        color: white;
+    }
+
+    .raise-container {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    .raise-amount {
+        width: 80px;
+        padding: 8px;
+        border-radius: 5px;
+        border: 1px solid #f39c12;
+        background-color: #0a290f;
+        color: white;
+    }
+
+    /* Game log */
+    .game-log-container {
+        background-color: #0e3a15;
+        border-radius: 10px;
+        padding: 15px;
+        margin-top: 20px;
+    }
+
+    .game-log-container h3 {
+        margin-top: 0;
+        margin-bottom: 10px;
+        color: #f1c40f;
+    }
+
+    .game-log {
+        height: 200px;
+        overflow-y: auto;
+        background-color: rgba(0, 0, 0, 0.3);
+        padding: 10px;
+        border-radius: 5px;
+    }
+
+    .log-entry {
+        margin-bottom: 5px;
+        line-height: 1.4;
+    }
+
+    .timestamp {
+        color: #95a5a6;
+        margin-right: 5px;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+        .poker-table {
+            padding: 20px;
+            border-radius: 100px;
+        }
+
+        .card {
+            width: 60px;
+            height: 90px;
+        }
+
+        .player {
+            width: 140px;
+            padding: 10px;
+        }
+
+        .player-cards .card {
+            width: 40px;
+            height: 60px;
+        }
+
+        .card .value {
+            font-size: 18px;
+        }
+
+        .card .suit {
+            font-size: 24px;
+        }
+    }
+
+    /* Position selection modal */
+    .position-selection {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .position-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+    }
+
+    .position-btn {
+        padding: 10px;
+        background-color: #3498db;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: all 0.2s;
+    }
+
+    .position-btn:hover {
+        background-color: #2980b9;
+        transform: translateY(-2px);
+    }
+
+    .position-btn.occupied {
+        background-color: #95a5a6;
+        cursor: not-allowed;
+        opacity: 0.7;
+    }
+
+    .position-actions {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 10px;
+    }
+
+    .cancel-btn,
+    .auto-btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: all 0.2s;
+    }
+
+    .cancel-btn {
+        background-color: #e74c3c;
+        color: white;
+    }
+
+    .auto-btn {
+        background-color: #2ecc71;
+        color: white;
+    }
+
+    .cancel-btn:hover,
+    .auto-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    /* Debug Panel */
+    .debug-panel {
+        position: fixed;
+        bottom: 0;
+        right: 0;
+        width: 400px;
+        background-color: #0a290f;
+        border-top-left-radius: 10px;
+        border: 2px solid #2ecc71;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        z-index: 100;
+        transition: height 0.3s ease;
+        max-height: 80vh;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .debug-header {
+        padding: 10px;
+        background-color: #0e3a15;
+        border-top-left-radius: 8px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .debug-header h3 {
+        margin: 0;
+        color: #f1c40f;
+    }
+
+    .toggle-debug-btn {
+        padding: 5px 10px;
+        background-color: #3498db;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+    }
+
+    .debug-content {
+        padding: 10px;
+        overflow-y: auto;
+        max-height: calc(80vh - 50px);
+        display: none;
+    }
+
+    .debug-content.visible {
+        display: block;
+    }
+
+    .json-display {
+        background-color: rgba(0, 0, 0, 0.3);
+        padding: 10px;
+        border-radius: 5px;
+        color: #2ecc71;
+        font-family: monospace;
+        white-space: pre-wrap;
+        overflow-x: auto;
+        max-height: 500px;
+        font-size: 12px;
+    }
+</style>
+
+<script>
+    // Card values and suits
+    const cardValues = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+    const cardSuits = {
+        'hearts': '♥',
+        'diamonds': '♦',
+        'clubs': '♣',
+        'spades': '♠'
+    };
+
+    // Variables for WebSocket connection
+    let socket = null;
+    let playerID = null;
+    let userID = null;
+    let authToken = null;
+    let roomID = 'room_1'; // Default room ID
+    let currentGameState = null;
+
+    // DOM elements
+    const communityCardsEl = document.getElementById('community-cards');
+    const playersEl = document.getElementById('players');
+    const gameLogEl = document.getElementById('game-log');
+    const potAmountEl = document.querySelector('.pot-amount');
+    const demoBtn = document.getElementById('demo-btn');
+    const connectBtn = document.getElementById('connect-btn');
+    const joinBtn = document.getElementById('join-btn');
+    const logoutBtn = document.getElementById('logout-btn');
+    const actionBtns = document.querySelectorAll('.action-btn');
+    const raiseAmount = document.querySelector('.raise-amount');
+    const loginModal = document.getElementById('login-modal');
+    const loginBtn = document.getElementById('login-btn');
+    const guestLoginBtn = document.getElementById('guest-login-btn');
+    const loginError = document.getElementById('login-error');
+    const usernameInput = document.getElementById('username');
+    const passwordInput = document.getElementById('password');
+
+    // Position selection elements
+    const positionModal = document.getElementById('position-modal');
+    const positionBtns = document.querySelectorAll('.position-btn');
+    const cancelPositionBtn = document.getElementById('cancel-position-btn');
+    const autoPositionBtn = document.getElementById('auto-position-btn');
+
+    // Debug panel elements
+    const toggleDebugBtn = document.getElementById('toggle-debug-btn');
+    const debugContent = document.getElementById('debug-content');
+    const gameStateJson = document.getElementById('game-state-json');
+
+    // Event listeners
+    demoBtn.addEventListener('click', loadDemo);
+    connectBtn.addEventListener('click', showLoginModal);
+    joinBtn.addEventListener('click', showPositionModal);
+    logoutBtn.addEventListener('click', handleLogout);
+    loginBtn.addEventListener('click', handleLogin);
+    guestLoginBtn.addEventListener('click', handleGuestLogin);
+    cancelPositionBtn.addEventListener('click', hidePositionModal);
+    autoPositionBtn.addEventListener('click', () => joinGame(-1)); // -1 means auto position
+    toggleDebugBtn.addEventListener('click', toggleDebugPanel);
+
+    // Add event listeners to position buttons
+    positionBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const position = parseInt(btn.getAttribute('data-position'));
+            joinGame(position);
+        });
+    });
+
+    // Add event listeners to action buttons
+    document.querySelector('.action-btn.fold').addEventListener('click', () => sendGameAction('fold'));
+    document.querySelector('.action-btn.check').addEventListener('click', () => sendGameAction('check'));
+    document.querySelector('.action-btn.call').addEventListener('click', () => sendGameAction('call'));
+    document.querySelector('.action-btn.raise').addEventListener('click', () => sendGameAction('raise', parseInt(raiseAmount.value)));
+    document.querySelector('.action-btn.all-in').addEventListener('click', () => sendGameAction('all-in'));
+
+    // Show login modal
+    function showLoginModal() {
+        loginModal.style.display = 'block';
+        usernameInput.focus();
+        loginError.textContent = '';
+    }
+
+    // Hide login modal
+    function hideLoginModal() {
+        loginModal.style.display = 'none';
+        usernameInput.value = '';
+        passwordInput.value = '';
+    }
+
+    // Handle login
+    async function handleLogin() {
+        const username = usernameInput.value.trim();
+        const password = passwordInput.value.trim();
+
+        if (!username || !password) {
+            loginError.textContent = 'Please enter both username and password';
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    username: username,
+                    password: password,
+                    provider: 1 // Email provider
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                loginError.textContent = data.message || 'Login failed';
+                return;
+            }
+
+            // Store auth token and user info
+            authToken = data.data.token;
+            userID = data.data.user.id;
+            playerID = data.data.player.id;
+
+            // Store token in localStorage for persistence
+            localStorage.setItem('authToken', authToken);
+
+            logMessage(`Logged in as ${username}`);
+            hideLoginModal();
+            connectToServer();
+
+        } catch (error) {
+            loginError.textContent = 'Error connecting to server';
+            console.error('Login error:', error);
+        }
+    }
+
+    async function handleGuestLogin() {
+        const id = crypto.randomUUID();
+        try {
+            const response = await fetch('http://localhost:8000/api/v1/auth/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    identifier: id,
+                    provider: 0 // Guest provider
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                loginError.textContent = data.message || 'Guest login failed';
+                return;
+            }
+
+            // Store auth token and user info
+            authToken = data.data.token;
+            userID = data.data.user.id;
+            playerID = data.data.user.player.id;
+
+            // Store token in localStorage for persistence
+            localStorage.setItem('authToken', authToken);
+
+            logMessage(`Logged in as guest`);
+            hideLoginModal();
+            connectToServer();
+
+        } catch (error) {
+            loginError.textContent = 'Error connecting to server';
+            console.error('Guest login error:', error);
+        }
+    }
+
+    // Connect to WebSocket server
+    function connectToServer() {
+        if (!authToken) {
+            logMessage('Authentication required');
+            showLoginModal();
+            return;
+        }
+
+        logMessage('Connecting to server...');
+
+        try {
+            // Create WebSocket connection
+            const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+            const wsUrl = `${protocol}${window.location.host}/ws?token=${authToken}`;
+
+            socket = new WebSocket(wsUrl);
+
+            // Connection established
+            socket.onopen = function () {
+                logMessage('Connected to server!');
+                connectBtn.textContent = 'Connected';
+                connectBtn.disabled = true;
+                joinBtn.disabled = false;
+
+                // Request room info
+                sendMessage('room_join', { roomId: roomID });
+            };
+
+            // Listen for messages
+            socket.onmessage = function (event) {
+                const message = JSON.parse(event.data);
+
+                // Handle different message types
+                switch (message.type) {
+                    case 'room_info':
+                        handleRoomInfo(message.data);
+                        break;
+                    case 'game_info':
+                        handleGameInfo(message.data);
+                        break;
+                    case 'error':
+                        handleError(message.data);
+                        break;
+                    default:
+                        logMessage(`Received unknown message type: ${message.type}`);
+                }
+            };
+
+            // Connection closed
+            socket.onclose = function (event) {
+                logMessage(`Disconnected from server: ${event.reason || 'Connection closed'}`);
+                connectBtn.textContent = 'Connect';
+                connectBtn.disabled = false;
+                joinBtn.disabled = true;
+                disableActionButtons();
+            };
+
+            // Connection error
+            socket.onerror = function (error) {
+                logMessage(`Connection error`);
+                connectBtn.textContent = 'Connect';
+                connectBtn.disabled = false;
+            };
+
+        } catch (error) {
+            logMessage(`Failed to connect: ${error.message}`);
+        }
+    }
+
+    // Send message to server
+    function sendMessage(type, data, roomId = null, playerId = null) {
+        console.log('Sending message:', socket);
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            const message = {
+                type: type,
+                data: data,
+                roomId: roomId,
+                playerId: playerId
+            };
+            socket.send(JSON.stringify(message));
+        }
+    }
+
+    // Handle room info
+    function handleRoomInfo(data) {
+        logMessage(`Room: ${data.roomId}, Players: ${data.players?.length || 0}/${data.maxPlayers}`);
+
+        if (data.gameState) {
+            logMessage(`Game status: ${data.gameState.status}`);
+        }
+
+        // Store the current game state for position selection
+        currentGameState = { data: data, gameState: data.gameState };
+
+        // Update position buttons in case the position modal is open
+        updatePositionButtons();
+
+        // Update debug panel
+        updateDebugPanel();
+    }
+
+    // Handle game info
+    function handleGameInfo(data) {
+        // Store the game state
+        currentGameState = data;
+
+        // Extract player cards if available
+        if (data.gameState && data.gameState.state && data.gameState.state.Players) {
+            const players = data.gameState.state.Players;
+            const ourPlayer = players.find(p => p.ID === playerID);
+
+            // If we have our player and they have cards
+            if (ourPlayer && ourPlayer.Cards && ourPlayer.Cards.length === 2) {
+                // Store the cards in the game state for rendering
+                if (!currentGameState.gameState.playerCards) {
+                    currentGameState.gameState.playerCards = {};
+                }
+                currentGameState.gameState.playerCards[playerID] = ourPlayer.Cards;
+
+                // Log that we received our cards
+                console.log('Received player cards:', ourPlayer.Cards);
+            }
+        }
+
+        // Update UI with game state
+        renderGameState(data);
+
+        // Update debug panel
+        updateDebugPanel();
+
+        // Check if it's our turn
+        const gameState = data.gameState || {};
+        const statePlayers = gameState.state?.Players || [];
+        const ourPlayer = statePlayers.find(p => p.ID === playerID);
+
+        if (ourPlayer && ourPlayer.IsCurrentTurn) {
+            logMessage('Your turn to act');
+            enableActionButtons(gameState.state?.CurrentBet || 0);
+        } else {
+            disableActionButtons();
+        }
+    }
+
+    // Handle error messages
+    function handleError(data) {
+        logMessage(`Error: ${data.error}`);
+    }
+
+    // Show position selection modal
+    function showPositionModal() {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            logMessage('Not connected to server');
+            return;
+        }
+
+        // Update position buttons based on occupied seats
+        updatePositionButtons();
+
+        positionModal.style.display = 'block';
+    }
+
+    // Hide position selection modal
+    function hidePositionModal() {
+        positionModal.style.display = 'none';
+    }
+
+    // Update position buttons based on occupied seats
+    function updatePositionButtons() {
+        // Reset all buttons
+        positionBtns.forEach(btn => {
+            btn.classList.remove('occupied');
+            btn.disabled = false;
+        });
+
+        // If we have game state, mark occupied positions
+        if (currentGameState && currentGameState.data) {
+            const players = currentGameState.data.players || [];
+
+            players.forEach(player => {
+                if (player && player.position !== undefined) {
+                    const position = player.position;
+                    const btn = document.querySelector(`.position-btn[data-position="${position}"]`);
+                    if (btn) {
+                        btn.classList.add('occupied');
+                        btn.disabled = true;
+                    }
+                }
+            });
+        }
+    }
+
+    // Join a game
+    function joinGame(position = -1) {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            logMessage('Not connected to server');
+            return;
+        }
+
+        sendMessage('game_join', {
+            roomId: roomID,
+            position: position // -1 means auto position
+        });
+
+        hidePositionModal();
+        logMessage(`Joining game at ${position === -1 ? 'auto position' : 'position ' + position}...`);
+    }
+
+    // Send a game action
+    function sendGameAction(action, amount = 0) {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            logMessage('Not connected to server');
+            return;
+        }
+
+        if (!currentGameState) {
+            logMessage('No active game');
+            return;
+        }
+
+        // Check if it's our turn
+        const gameState = currentGameState.gameState || {};
+        const statePlayers = gameState.state?.Players || [];
+        const ourPlayer = statePlayers.find(p => p.ID === playerID);
+
+        if (!ourPlayer || !ourPlayer.IsCurrentTurn) {
+            logMessage('Not your turn');
+            return;
+        }
+
+        const actionData = {
+            playerId: playerID,
+            roomId: roomID,
+            action: action,
+            data: {
+                amount: amount,
+                action: action,
+                playerId: playerID
+            }
+        };
+
+        sendMessage('game_action', actionData, roomID, playerID);
+        logMessage(`Sending action: ${action}${amount > 0 ? ' ' + amount : ''}`);
+    }
+
+    // Enable action buttons based on game state
+    function enableActionButtons(currentBet) {
+        const gameState = currentGameState.gameState || {};
+        const statePlayers = gameState.state?.Players || [];
+        const ourPlayer = statePlayers.find(p => p.ID === playerID);
+
+        if (!ourPlayer) return;
+
+        // Get the player's current bet from the game state
+        const playerBet = ourPlayer.CurrentBet || 0;
+        const toCall = currentBet - playerBet;
+
+        console.log(`Current bet: ${currentBet}, Player bet: ${playerBet}, To call: ${toCall}`);
+
+        // Enable/disable buttons based on valid actions
+        document.querySelector('.action-btn.fold').disabled = false;
+
+        // Always enable check button
+        document.querySelector('.action-btn.check').disabled = false;
+
+        if (toCall === 0) {
+            document.querySelector('.action-btn.call').disabled = true;
+            logMessage('You can check');
+        } else {
+            document.querySelector('.action-btn.call').disabled = false;
+            document.querySelector('.action-btn.call').textContent = `Call $${toCall}`;
+        }
+
+        document.querySelector('.action-btn.raise').disabled = false;
+        document.querySelector('.action-btn.all-in').disabled = false;
+
+        // Set minimum raise amount
+        const minRaise = Math.max(currentBet * 2, 10);
+        raiseAmount.min = minRaise;
+        raiseAmount.value = minRaise;
+    }
+
+    // Disable all action buttons
+    function disableActionButtons() {
+        actionBtns.forEach(btn => {
+            // Keep check button enabled
+            if (!btn.classList.contains('check')) {
+                btn.disabled = true;
+            }
+        });
+    }
+
+    // Log a message
+    function logMessage(message) {
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString();
+        const logEntry = document.createElement('div');
+        logEntry.className = 'log-entry';
+        logEntry.innerHTML = `<span class="timestamp">[${timeStr}]</span> ${message}`;
+        gameLogEl.appendChild(logEntry);
+        gameLogEl.scrollTop = gameLogEl.scrollHeight;
+    }
+
+    // Create a card element
+    function createCardElement(card, faceDown = false) {
+        const cardEl = document.createElement('div');
+        cardEl.className = 'card';
+
+        if (faceDown) {
+            cardEl.style.backgroundColor = '#2980b9';
+            cardEl.style.backgroundImage = 'repeating-linear-gradient(45deg, #3498db, #3498db 10px, #2980b9 10px, #2980b9 20px)';
+            return cardEl;
+        }
+
+        // Red suits
+        if (card.suit === 'hearts' || card.suit === 'diamonds') {
+            cardEl.classList.add('red');
+        }
+
+        const valueEl = document.createElement('div');
+        valueEl.className = 'value';
+        valueEl.textContent = card.value;
+
+        const suitEl = document.createElement('div');
+        suitEl.className = 'suit';
+        suitEl.textContent = cardSuits[card.suit];
+
+        cardEl.appendChild(valueEl);
+        cardEl.appendChild(suitEl);
+
+        return cardEl;
+    }
+
+    // Render community cards
+    function renderCommunityCards(cards, round) {
+        communityCardsEl.innerHTML = '';
+
+        // Only show cards appropriate for the current round
+        let visibleCards = [];
+        switch (round) {
+            case 'preflop':
+                // No community cards visible
+                break;
+            case 'flop':
+                visibleCards = cards.slice(0, 3);
+                break;
+            case 'turn':
+                visibleCards = cards.slice(0, 4);
+                break;
+            case 'river':
+            case 'showdown':
+                visibleCards = cards.slice(0, 5);
+                break;
+        }
+
+        // Add visible cards
+        visibleCards.forEach(card => {
+            communityCardsEl.appendChild(createCardElement(card));
+        });
+
+        // Add placeholders for cards not yet revealed
+        for (let i = visibleCards.length; i < 5; i++) {
+            const placeholder = document.createElement('div');
+            placeholder.className = 'card placeholder';
+            placeholder.style.visibility = 'hidden';
+            communityCardsEl.appendChild(placeholder);
+        }
+    }
+
+    // Render players
+    function renderPlayers(players) {
+        playersEl.innerHTML = '';
+
+        players.forEach((player, index) => {
+            const playerEl = document.createElement('div');
+            playerEl.className = 'player';
+
+            // Add a class if this is the current player
+            if (player.ID === playerID) {
+                playerEl.classList.add('current-player');
+            }
+
+            const nameEl = document.createElement('div');
+            nameEl.className = 'player-name';
+            nameEl.textContent = player.Name;
+
+            const balanceEl = document.createElement('div');
+            balanceEl.className = 'player-balance';
+            balanceEl.textContent = `$${player.Balance}`;
+
+            const cardsEl = document.createElement('div');
+            cardsEl.className = 'player-cards';
+
+            // Check if player has cards and hasn't folded
+            if (player.HasCards && !player.Folded) {
+                // If this is the current player, show their cards
+                if (player.ID === playerID) {
+                    // Check if we have the actual card data
+                    if (player.Cards && player.Cards.length === 2) {
+                        cardsEl.appendChild(createCardElement(player.Cards[0]));
+                        cardsEl.appendChild(createCardElement(player.Cards[1]));
+                    } else if (player.Hand && player.Hand.length === 2) {
+                        cardsEl.appendChild(createCardElement(player.Hand[0]));
+                        cardsEl.appendChild(createCardElement(player.Hand[1]));
+                    } else if (currentGameState && currentGameState.gameState &&
+                        currentGameState.gameState.playerCards &&
+                        currentGameState.gameState.playerCards[player.ID]) {
+                        // Try to get cards from game state
+                        const cards = currentGameState.gameState.playerCards[player.ID];
+                        cardsEl.appendChild(createCardElement(cards[0]));
+                        cardsEl.appendChild(createCardElement(cards[1]));
+                    } else {
+                        // Fallback to face down if we don't have the card data yet
+                        cardsEl.appendChild(createCardElement({}, true));
+                        cardsEl.appendChild(createCardElement({}, true));
+
+                        // Log that we're missing card data
+                        console.log('Missing card data for current player', player);
+                    }
+                } else {
+                    // For other players, always show face down cards
+                    cardsEl.appendChild(createCardElement({}, true));
+                    cardsEl.appendChild(createCardElement({}, true));
+                }
+            } else if (player.showCards && player.Cards && player.Cards.length === 2) {
+                // Show cards during showdown if available
+                cardsEl.appendChild(createCardElement(player.Cards[0]));
+                cardsEl.appendChild(createCardElement(player.Cards[1]));
+            }
+
+            const statusEl = document.createElement('div');
+            statusEl.className = 'player-status';
+
+            if (player.Folded) {
+                statusEl.textContent = 'Folded';
+            } else if (player.IsCurrentTurn) {
+                statusEl.textContent = 'Acting';
+                statusEl.classList.add('active');
+            } else {
+                statusEl.textContent = 'Waiting';
+            }
+
+            if (player.IsDealer) {
+                statusEl.classList.add('dealer');
+            }
+
+            if (player.IsSmallBlind) {
+                statusEl.classList.add('sb');
+            }
+
+            if (player.IsBigBlind) {
+                statusEl.classList.add('bb');
+            }
+
+            playerEl.appendChild(nameEl);
+            playerEl.appendChild(balanceEl);
+            playerEl.appendChild(cardsEl);
+            playerEl.appendChild(statusEl);
+
+            playersEl.appendChild(playerEl);
+        });
+    }
+
+    // Update pot display
+    function updatePot(amount) {
+        potAmountEl.textContent = `$${amount}`;
+    }
+
+    // Render game state
+    function renderGameState(state) {
+        const gameState = state.gameState || {};
+        const statePlayers = gameState.state?.Players || [];
+
+        // Render community cards
+        const communityCards = gameState.state?.CommunityCards || [];
+        const currentRound = gameState.state?.CurrentRound || 'preflop';
+        renderCommunityCards(communityCards, currentRound);
+
+        // Render players
+        renderPlayers(statePlayers);
+
+        // Update pot
+        updatePot(gameState.state?.Pot || 0);
+
+        // Update call button text
+        const callBtn = document.querySelector('.action-btn.call');
+        callBtn.textContent = `Call $${gameState.state?.CurrentBet || 0}`;
+
+        // Log round
+        logMessage(`Current round: ${(currentRound || 'preflop').toUpperCase()}`);
+    }
+
+    // Load demo state
+    function loadDemo() {
+        // Set a demo player ID if not set
+        if (!playerID) {
+            playerID = 'player1';
+        }
+
+        // Make sure the demo state has player cards
+        if (!demoGameState.gameState) {
+            demoGameState.gameState = {};
+        }
+
+        if (!demoGameState.gameState.playerCards) {
+            demoGameState.gameState.playerCards = {};
+        }
+
+        // Add the current player's cards
+        demoGameState.gameState.playerCards[playerID] = [
+            { value: 'A', suit: 'hearts' },
+            { value: 'K', suit: 'hearts' }
+        ];
+
+        // Update the state and render
+        currentGameState = demoGameState;
+        renderGameState(demoGameState);
+
+        // Update debug panel
+        updateDebugPanel();
+
+        logMessage('Demo game state loaded');
+
+        // Simulate some game events
+        setTimeout(() => logMessage('Player 2 checks'), 500);
+        setTimeout(() => logMessage('Player 3 raises to $40'), 1500);
+        setTimeout(() => logMessage('Player 4 calls $40'), 2500);
+        setTimeout(() => logMessage('Player 5 folds'), 3500);
+        setTimeout(() => logMessage('Your turn to act'), 4500);
+    }
+
+    // Sample game state for demo
+    const demoGameState = {
+        gameState: {
+            state: {
+                Players: [
+                    { ID: 'player1', Name: 'You', Balance: 980, HasCards: true, Folded: false, IsDealer: false, IsSmallBlind: true, IsBigBlind: false, IsCurrentTurn: true, Cards: [{ value: 'A', suit: 'hearts' }, { value: 'K', suit: 'hearts' }] },
+                    { ID: 'player2', Name: 'Player 2', Balance: 1200, HasCards: true, Folded: false, IsDealer: true, IsSmallBlind: false, IsBigBlind: false, IsCurrentTurn: false },
+                    { ID: 'player3', Name: 'Player 3', Balance: 750, HasCards: true, Folded: false, IsDealer: false, IsSmallBlind: false, IsBigBlind: true, IsCurrentTurn: false },
+                    { ID: 'player4', Name: 'Player 4', Balance: 1500, HasCards: true, Folded: false, IsDealer: false, IsSmallBlind: false, IsBigBlind: false, IsCurrentTurn: false },
+                    { ID: 'player5', Name: 'Player 5', Balance: 800, HasCards: true, Folded: false, IsDealer: false, IsSmallBlind: false, IsBigBlind: false, IsCurrentTurn: false },
+                ],
+                CommunityCards: [
+                    { value: '10', suit: 'spades' },
+                    { value: 'J', suit: 'diamonds' },
+                    { value: 'Q', suit: 'clubs' },
+                    { value: '2', suit: 'hearts' },
+                    { value: '7', suit: 'spades' }
+                ],
+                Pot: 120,
+                CurrentBet: 20,
+                CurrentRound: 'river'
+            },
+            playerCards: {}
+        },
+        data: {
+            roomId: 'room_1',
+            players: [
+                { ID: 'player1', Name: 'You', position: 0 },
+                { ID: 'player2', Name: 'Player 2', position: 1 },
+                { ID: 'player3', Name: 'Player 3', position: 2 },
+                { ID: 'player4', Name: 'Player 4', position: 3 },
+                { ID: 'player5', Name: 'Player 5', position: 4 },
+            ],
+            maxPlayers: 9
+        }
+    };
+
+    // Handle logout
+    function handleLogout() {
+        // Clear auth token
+        authToken = null;
+        localStorage.removeItem('authToken');
+
+        // Disconnect socket if connected
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.close();
+        }
+
+        // Reset UI
+        connectBtn.textContent = 'Connect';
+        connectBtn.disabled = false;
+        joinBtn.disabled = true;
+        disableActionButtons();
+
+        // Clear game state
+        currentGameState = null;
+        playerID = null;
+        userID = null;
+
+        logMessage('Logged out');
+    }
+
+    // Toggle debug panel visibility
+    function toggleDebugPanel() {
+        debugContent.classList.toggle('visible');
+    }
+
+    // Update debug panel with current game state
+    function updateDebugPanel() {
+        if (currentGameState && currentGameState.gameState) {
+            gameStateJson.textContent = JSON.stringify(currentGameState.gameState, null, 2);
+        } else {
+            gameStateJson.textContent = 'No game state available';
+        }
+    }
+
+    // Initialize with empty table
+    window.addEventListener('DOMContentLoaded', () => {
+        logMessage('Welcome to Texas Hold\'em Poker!');
+
+        // Check if we have a stored token
+        if (authToken) {
+            logMessage('Found existing session, connecting...');
+            connectToServer();
+        } else {
+            logMessage('Click "Connect" to connect to the server, then "Join Game" to join a game.');
+        }
+
+        logMessage('Or click "Load Demo" to see a sample game state.');
+
+        // Initially disable join button and action buttons
+        joinBtn.disabled = true;
+        disableActionButtons();
+
+        // Initialize debug panel
+        updateDebugPanel();
+    });
+</script>

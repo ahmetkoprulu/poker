@@ -3,6 +3,7 @@ package models
 import (
 	"encoding/json"
 	"errors"
+	"sync"
 
 	"slices"
 
@@ -13,8 +14,10 @@ type GameStatus string
 
 const (
 	GameStatusWaiting  GameStatus = "waiting"
+	GameStatusStarting GameStatus = "starting"
 	GameStatusStarted  GameStatus = "started"
-	GameStatusFinished GameStatus = "finished"
+	GameStatusEnding   GameStatus = "ending"
+	GameStatusEnd      GameStatus = "end"
 )
 
 type GamePlayerStatus string
@@ -23,6 +26,14 @@ const (
 	GamePlayerStatusWaiting  GamePlayerStatus = "waiting"
 	GamePlayerStatusActive   GamePlayerStatus = "active"
 	GamePlayerStatusInactive GamePlayerStatus = "inactive"
+)
+
+type GameActionType string
+
+const (
+	GameActionTypePlayerJoin   GameActionType = "player_join"
+	GameActionTypePlayerLeave  GameActionType = "player_leave"
+	GameActionTypePlayerAction GameActionType = "player_action"
 )
 
 type GameError error
@@ -44,23 +55,30 @@ const (
 type IPlayable interface {
 	Start() error
 	End() error
+	OnPlayerJoin(player *GamePlayer) error
+	OnPlayerLeave(player *GamePlayer) error
 	ProcessAction(action json.RawMessage) error
-	CanStart() bool
 	DealCards() error
 	EvaluateHands() error
+	CanStart() bool
 	GetGameState() interface{}
 }
 
 type GameAction struct {
 	PlayerID string          `json:"playerId"`
-	Action   string          `json:"action"` // fold, check, call, raise
+	Action   GameActionType  `json:"action"`
 	Data     json.RawMessage `json:"data"`
 }
 
 type Card struct {
 	Suit   string `json:"suit"`
-	Value  string `json:"value"`
+	Value  int    `json:"value"`
 	Hidden bool   `json:"hidden"`
+}
+
+type IGamePlayer interface {
+	GetBalance() int
+	GetData() interface{}
 }
 
 type GamePlayer struct {
@@ -68,25 +86,27 @@ type GamePlayer struct {
 	Balance    int              `json:"balance"`
 	LastAction string           `json:"lastAction"`
 	Player     Player           `json:"player"`
-	Hand       []Card           `json:"hand"`
 	Status     GamePlayerStatus `json:"status"`
+	Data       IGamePlayer      `json:"data"`
 }
 
 type Game struct {
 	ID         string          `json:"id"`
 	Status     GameStatus      `json:"status"`
+	GameType   GameType        `json:"gameType"`
 	Players    []*GamePlayer   `json:"players"`
 	Playable   IPlayable       `json:"playable"`
 	MinBet     int             `json:"minBet"`
 	MaxPlayers int             `json:"maxPlayers"`
 	ActionChan chan GameAction `json:"-"`
-	GameType   GameType        `json:"gameType"`
+	Mu         sync.RWMutex    `json:"-"`
 }
 
 type GameState struct {
-	Status  GameStatus    `json:"status"`
-	Players []*GamePlayer `json:"players"`
-	State   interface{}   `json:"state"`
+	Status   GameStatus    `json:"status"`
+	GameType GameType      `json:"gameType"`
+	Players  []*GamePlayer `json:"players"`
+	State    interface{}   `json:"state"`
 }
 
 func NewGame(actionChan chan GameAction, maxPlayers int, minBet int, gameType GameType) *Game {
@@ -98,26 +118,38 @@ func NewGame(actionChan chan GameAction, maxPlayers int, minBet int, gameType Ga
 		MinBet:     minBet,
 		ActionChan: actionChan,
 		GameType:   gameType,
+		Mu:         sync.RWMutex{},
 	}
 }
 
-func (g *Game) AddPlayer(player *GamePlayer) error {
+func (g *Game) AddPlayer(position int, player *Player) error {
+	g.Mu.Lock()
+	defer g.Mu.Unlock()
+
+	gamePlayer := &GamePlayer{
+		Position: position,
+		Player:   *player,
+		Balance:  player.Chips,
+	}
+
 	if len(g.Players) >= g.MaxPlayers {
 		return ErrorGameFull
 	}
 
 	for _, p := range g.Players {
-		if p.Player.ID == player.Player.ID {
+		if p.Player.ID == player.ID {
 			return ErrorGamePlayerAlreadyIn
 		}
 
-		if p.Position == player.Position {
+		if p.Position == position {
 			return ErrorGamePositionTaken
 		}
 	}
 
-	player.Status = GamePlayerStatusWaiting
-	g.Players = append(g.Players, player)
+	gamePlayer.Status = GamePlayerStatusWaiting
+	g.Players = append(g.Players, gamePlayer)
+	g.Playable.OnPlayerJoin(gamePlayer)
+
 	return nil
 }
 
@@ -125,18 +157,15 @@ func (g *Game) RemovePlayer(playerID string) error {
 	for i, p := range g.Players {
 		if p.Player.ID == playerID {
 			g.Players = slices.Delete(g.Players, i, i+1)
+			g.Playable.OnPlayerLeave(p)
 			return nil
 		}
 	}
 	return ErrorGamePlayerNotFound
 }
 
-func (g *Game) CanStart() bool {
-	return len(g.Players) >= 2 && g.Status == GameStatusWaiting
-}
-
 func (g *Game) Start() error {
-	if !g.CanStart() {
+	if !g.Playable.CanStart() {
 		return ErrorGameNotReady
 	}
 
@@ -155,14 +184,14 @@ func (g *Game) End() error {
 		return err
 	}
 
-	g.Status = GameStatusFinished
+	g.Status = GameStatusEnd
 	return nil
 }
 
 func (g *Game) GetGameState() GameState {
 	return GameState{
-		Status:  g.Status,
-		Players: g.Players,
-		State:   g.Playable.GetGameState(),
+		Status:   g.Status,
+		GameType: g.GameType,
+		State:    g.Playable.GetGameState(),
 	}
 }
