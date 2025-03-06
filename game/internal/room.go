@@ -1,8 +1,10 @@
-package models
+package internal
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 )
 
 var (
@@ -17,14 +19,15 @@ const (
 )
 
 type Room struct {
-	ID            string          `json:"id"`
-	Name          string          `json:"name"`
-	Status        RoomStatus      `json:"status"`
-	Game          *Game           `json:"game"`
-	MaxPlayers    int             `json:"maxPlayers"`
-	MinBet        int             `json:"minBet"`
-	Players       []*Player       `json:"players"`
-	ActionChannel chan GameAction `json:"-"`
+	ID             string           `json:"id"`
+	Name           string           `json:"name"`
+	Status         RoomStatus       `json:"status"`
+	Game           *Game            `json:"game"`
+	MaxPlayers     int              `json:"maxPlayers"`
+	MinBet         int              `json:"minBet"`
+	Players        []*Client        `json:"players"`
+	ActionChannel  chan GameAction  `json:"-"`
+	MessageChannel chan GameMessage `json:"-"`
 }
 
 type Player struct {
@@ -34,27 +37,22 @@ type Player struct {
 	Chips    int    `json:"chips"`
 }
 
-func NewRoom(id, name string, maxPlayers, maxGamePlayers int, minBet int, gameType GameType) *Room {
+func NewRoom(id, name string, maxPlayers int, minBet int, gameType GameType) *Room {
 	room := &Room{
-		ID:            id,
-		Name:          name,
-		Status:        RoomStatusActive,
-		MaxPlayers:    maxPlayers,
-		MinBet:        minBet,
-		Players:       make([]*Player, 0),
-		ActionChannel: make(chan GameAction),
+		ID:             id,
+		Name:           name,
+		Status:         RoomStatusActive,
+		MaxPlayers:     maxPlayers,
+		MinBet:         minBet,
+		Players:        make([]*Client, 0),
+		ActionChannel:  make(chan GameAction),
+		MessageChannel: make(chan GameMessage, 100),
 	}
 
 	return room
 }
 
-// func (r *Room) EnsureGameExists() {
-// 	if r.Game == nil || r.Game.Status == GameStatusEnd {
-// 		r.Game = NewGame(r.ActionChannel, r.MaxPlayers, r.MinBet, r.Game.GameType)
-// 	}
-// }
-
-func (r *Room) AddPlayer(player *Player) error {
+func (r *Room) AddPlayer(player *Client) error {
 	if len(r.Players) >= r.MaxPlayers {
 		return ErrorRoomFull
 	}
@@ -65,7 +63,7 @@ func (r *Room) AddPlayer(player *Player) error {
 
 func (r *Room) RemovePlayer(playerID string) error {
 	for i, p := range r.Players {
-		if p.ID == playerID {
+		if p.User.Player.ID == playerID {
 			r.Game.RemovePlayer(playerID)
 			r.Players = append(r.Players[:i], r.Players[i+1:]...)
 			return nil
@@ -92,11 +90,27 @@ func (r *Room) GetRoomState() RoomState {
 	}
 }
 
+func (r *Room) SendMessage(message GameMessage) {
+	r.MessageChannel <- message
+}
+
+func (r *Room) SendMessageToRoom(message GameMessage) {
+	for _, p := range r.Players {
+		msg, err := json.Marshal(message)
+		if err != nil {
+			log.Printf("Error marshalling message: %v", err)
+			continue
+		}
+
+		p.send <- msg
+	}
+}
+
 type RoomState struct {
 	RoomID     string     `json:"roomId"`
 	Status     RoomStatus `json:"status"`
 	MaxPlayers int        `json:"maxPlayers"`
 	MinBet     int        `json:"minBet"`
-	Players    []*Player  `json:"players"`
+	Players    []*Client  `json:"players"`
 	GameState  GameState  `json:"gameState"`
 }

@@ -61,6 +61,15 @@ func (s *AuthService) Login(ctx context.Context, request *models.LoginRequest) (
 	}, nil
 }
 
+func (s *AuthService) GetUser(ctx context.Context, userID string) (*models.User, error) {
+	user, err := s.userStore.GetUserByID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	return user, nil
+}
+
 func (s *AuthService) Register(ctx context.Context, request *models.RegisterRequest) error {
 	loginReq := &models.LoginRequest{
 		Provider:   models.Email,

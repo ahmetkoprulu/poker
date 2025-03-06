@@ -10,6 +10,17 @@ var (
 	ErrEmptyDeck = errors.New("deck is empty")
 )
 
+// Deck represents a standard deck of 52 playing cards
+type Deck struct {
+	Cards []Card
+}
+
+type Card struct {
+	Suit   string `json:"suit"`
+	Value  int    `json:"value"`
+	Hidden bool   `json:"hidden"`
+}
+
 // Suit represents a card suit
 type Suit string
 
@@ -38,37 +49,6 @@ const (
 	King  Value = 13
 	Ace   Value = 14
 )
-
-// Round represents a betting round in poker
-type Round string
-
-const (
-	PreFlop Round = "preflop"
-	Flop    Round = "flop"
-	Turn    Round = "turn"
-	River   Round = "river"
-)
-
-// HandRank represents the rank of a poker hand
-type HandRank int
-
-const (
-	HighCard HandRank = iota
-	OnePair
-	TwoPair
-	ThreeOfAKind
-	Straight
-	Flush
-	FullHouse
-	FourOfAKind
-	StraightFlush
-	RoyalFlush
-)
-
-// Deck represents a standard deck of 52 playing cards
-type Deck struct {
-	Cards []Card
-}
 
 // NewDeck creates and returns a new deck of cards
 func NewDeck() *Deck {
@@ -108,30 +88,4 @@ func (d *Deck) Draw() (Card, error) {
 	card := d.Cards[len(d.Cards)-1]
 	d.Cards = d.Cards[:len(d.Cards)-1]
 	return card, nil
-}
-
-// PokerHand represents a player's poker hand with its rank
-type PokerHand struct {
-	Cards []Card
-	Rank  HandRank
-	Value int // Used for comparing hands of the same rank
-}
-
-// EvaluateHand determines the best poker hand from the given cards
-func EvaluateHand(playerCards []Card, communityCards []Card) PokerHand {
-	// Combine player's cards with community cards
-	allCards := append([]Card{}, playerCards...)
-	allCards = append(allCards, communityCards...)
-
-	// TODO: Implement hand evaluation logic
-	// This will be a complex function that needs to:
-	// 1. Check for all possible hand combinations
-	// 2. Return the best possible hand
-	// 3. Assign proper rank and value for comparison
-
-	return PokerHand{
-		Cards: allCards,
-		Rank:  HighCard,
-		Value: 0,
-	}
 }

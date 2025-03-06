@@ -1,4 +1,4 @@
-package room
+package internal
 
 import (
 	"encoding/json"
@@ -6,29 +6,26 @@ import (
 	"fmt"
 	"log"
 	"sync"
-
-	"github.com/ahmetkoprulu/rtrp/game/internal/room/game"
-	"github.com/ahmetkoprulu/rtrp/game/models"
 )
 
 type RoomManager struct {
-	rooms map[string]*models.Room
+	rooms map[string]*Room
 	mu    sync.RWMutex
 }
 
 func NewRoomManager() *RoomManager {
 	return &RoomManager{
-		rooms: make(map[string]*models.Room),
+		rooms: make(map[string]*Room),
 	}
 }
 
-func (rm *RoomManager) CreateRoom(id, name string, maxPlayers, maxGamePlayers, minBet int, gameType models.GameType) (*models.Room, error) {
-	room := models.NewRoom(id, name, maxPlayers, maxGamePlayers, minBet, gameType)
+func (rm *RoomManager) CreateRoom(id, name string, maxPlayers, maxGamePlayers, minBet int, gameType GameType) (*Room, error) {
+	room := NewRoom(id, name, maxPlayers, minBet, gameType)
 
 	switch gameType {
-	case models.GameTypeHoldem:
-		room.Game = models.NewGame(room.ActionChannel, maxPlayers, minBet, gameType)
-		room.Game.Playable = game.NewHoldem(room.Game)
+	case GameTypeHoldem:
+		room.Game = NewGame(room.ActionChannel, room.MessageChannel, room, maxGamePlayers, minBet, gameType)
+		room.Game.Playable = NewHoldem(room.Game)
 	default:
 		return nil, fmt.Errorf("unsupported game type: %s", gameType)
 	}
@@ -42,7 +39,7 @@ func (rm *RoomManager) CreateRoom(id, name string, maxPlayers, maxGamePlayers, m
 	return room, nil
 }
 
-func (rm *RoomManager) RegisterRoom(room *models.Room) {
+func (rm *RoomManager) RegisterRoom(room *Room) {
 	if room == nil {
 		log.Printf("[ERROR] Attempted to register nil room")
 		return
@@ -55,7 +52,7 @@ func (rm *RoomManager) RegisterRoom(room *models.Room) {
 	log.Printf("[INFO] Room registered - RoomID: %s, MaxPlayers: %d, MinBet: %d", room.ID, room.MaxPlayers, room.MinBet)
 }
 
-func (rm *RoomManager) GetRoom(roomID string) (*models.Room, error) {
+func (rm *RoomManager) GetRoom(roomID string) (*Room, error) {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
 
@@ -67,13 +64,13 @@ func (rm *RoomManager) GetRoom(roomID string) (*models.Room, error) {
 	return room, nil
 }
 
-func (rm *RoomManager) GetRoomByPlayerID(playerID string) (*models.Room, error) {
+func (rm *RoomManager) GetRoomByPlayerID(playerID string) (*Room, error) {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
 
 	for _, room := range rm.rooms {
 		for _, player := range room.Players {
-			if player.ID == playerID {
+			if player.User.Player.ID == playerID {
 				return room, nil
 			}
 		}
@@ -82,20 +79,20 @@ func (rm *RoomManager) GetRoomByPlayerID(playerID string) (*models.Room, error) 
 	return nil, errors.New("room not found")
 }
 
-func (rm *RoomManager) JoinRoom(roomID string, player *models.Player) error {
+func (rm *RoomManager) JoinRoom(roomID string, player *Client) error {
 	room, err := rm.GetRoom(roomID)
 	if err != nil {
-		log.Printf("[ERROR] Room not found for join - RoomID: %s, PlayerID: %s", roomID, player.ID)
+		log.Printf("[ERROR] Room not found for join - RoomID: %s, PlayerID: %s", roomID, player.User.Player.ID)
 		return err
 	}
 
-	log.Printf("[INFO] Attempting to add player to room - RoomID: %s, PlayerID: %s, CurrentPlayers: %d", roomID, player.ID, len(room.Players))
+	log.Printf("[INFO] Attempting to add player to room - RoomID: %s, PlayerID: %s, CurrentPlayers: %d", roomID, player.User.Player.ID, len(room.Players))
 	if err := room.AddPlayer(player); err != nil {
-		log.Printf("[ERROR] Room is full - RoomID: %s, PlayerID: %s, MaxPlayers: %d", roomID, player.ID, room.MaxPlayers)
+		log.Printf("[ERROR] Room is full - RoomID: %s, PlayerID: %s, MaxPlayers: %d", roomID, player.User.Player.ID, room.MaxPlayers)
 		return errors.New("cannot join room: room is full")
 	}
 
-	log.Printf("[INFO] Player added to room - RoomID: %s, PlayerID: %s, TotalPlayers: %d", roomID, player.ID, len(room.Players))
+	log.Printf("[INFO] Player added to room - RoomID: %s, PlayerID: %s, TotalPlayers: %d", roomID, player.User.Player.ID, len(room.Players))
 	return nil
 }
 
@@ -111,7 +108,7 @@ func (rm *RoomManager) LeaveRoom(roomID string, playerID string) error {
 	// Find the player and mark them as inactive before removing
 	playerFound := false
 	for _, p := range room.Players {
-		if p.ID == playerID {
+		if p.User.Player.ID == playerID {
 			playerFound = true
 			break
 		}
@@ -128,10 +125,10 @@ func (rm *RoomManager) LeaveRoom(roomID string, playerID string) error {
 	}
 
 	// If game is active and not enough players, end the game
-	if room.Game.Status == models.GameStatusStarted && len(room.Game.Players) < 2 {
+	if room.Game.Status == GameStatusStarted && len(room.Game.Players) < 2 {
 		log.Printf("[INFO] Ending game due to insufficient players - RoomID: %s, RemainingPlayers: %d",
 			roomID, len(room.Game.Players))
-		room.Game.Status = models.GameStatusEnd
+		room.Game.Status = GameStatusEnd
 	}
 
 	log.Printf("[INFO] Player removed from room - RoomID: %s, PlayerID: %s, RemainingPlayers: %d",
@@ -163,7 +160,7 @@ func (rm *RoomManager) ProcessAction(roomID string, action json.RawMessage) erro
 		return err
 	}
 
-	if room.Game.Status != models.GameStatusStarted {
+	if room.Game.Status != GameStatusStarted {
 		return errors.New("game not in progress")
 	}
 

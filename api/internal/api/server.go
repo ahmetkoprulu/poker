@@ -58,7 +58,7 @@ func NewServer(db *data.PgDbContext) *Server {
 
 	v1 := server.router.Group("/api/v1")
 	{
-		authHandler.RegisterRoutes(v1)
+		authHandler.RegisterRoutes(v1, authMiddleware)
 		playerHandler.RegisterRoutes(v1, authMiddleware, serverToServerAuthMiddleware)
 		eventHandler.RegisterRoutes(v1, authMiddleware)
 		battlePassHandler.RegisterRoutes(v1, authMiddleware)

@@ -23,6 +23,7 @@ type AuthResponse struct {
 // UserStore interface for database operations
 type UserStore interface {
 	GetUserByIdentifier(ctx context.Context, provider models.SocialNetwork, identifier string) (*models.User, error)
+	GetUserByID(ctx context.Context, id string) (*models.User, error)
 	CreateUser(ctx context.Context, user *models.User) error
 	CreatePlayer(ctx context.Context, player *models.Player) (*models.Player, error)
 }

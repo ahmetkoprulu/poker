@@ -64,6 +64,52 @@ func (s *PgUserStore) GetUserByIdentifier(ctx context.Context, provider models.S
 	return result, nil
 }
 
+func (s *PgUserStore) GetUserByID(ctx context.Context, id string) (*models.User, error) {
+	var query = `
+		SELECT u.id, u.provider, u.identifier, u.password_hash, u.profile,
+			   p.id, p.username, p.profile_pic_url, p.chips
+		FROM users u
+		LEFT JOIN players p ON p.user_id = u.id
+		WHERE u.id = $1
+	`
+	result := &models.User{
+		Player: &models.Player{},
+	}
+
+	var playerID, playerUsername, playerProfilePicURL *string
+	var playerChips *int64
+	err := s.Db.QueryRow(ctx, query, id).Scan(
+		&result.ID,
+		&result.Provider,
+		&result.Identifier,
+		&result.Password,
+		&result.Profile,
+		&playerID,
+		&playerUsername,
+		&playerProfilePicURL,
+		&playerChips,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	// If player ID is empty (LEFT JOIN returned no player), set Player to nil
+	if playerID == nil {
+		result.Player = nil
+	} else {
+		result.Player.ID = *playerID
+		result.Player.Username = *playerUsername
+		result.Player.ProfilePicURL = *playerProfilePicURL
+		result.Player.Chips = *playerChips
+	}
+
+	return result, nil
+}
+
 func (s *PgUserStore) CreateUser(ctx context.Context, user *models.User) error {
 	var query = `
 		INSERT INTO users (id, provider, identifier, password_hash, profile)

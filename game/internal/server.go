@@ -1,4 +1,4 @@
-package websocket
+package internal
 
 import (
 	"errors"
@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ahmetkoprulu/rtrp/game/common/utils"
-	"github.com/ahmetkoprulu/rtrp/game/internal/room"
-	"github.com/ahmetkoprulu/rtrp/game/models"
+	"github.com/ahmetkoprulu/rtrp/game/internal/api"
 	"github.com/gorilla/websocket"
 )
 
@@ -21,35 +21,31 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-type Client struct {
-	ID       string
-	PlayerID string
-	Conn     *websocket.Conn
-	Server   *Server
-	mu       sync.Mutex
-	send     chan []byte
-}
-
 type Server struct {
-	clients     map[string]*Client
-	roomManager *room.RoomManager
-	broadcast   chan []byte
-	register    chan *Client
-	unregister  chan *Client
-	mu          sync.RWMutex
-	handler     *MessageHandler
+	clients        map[string]*Client
+	roomManager    *RoomManager
+	broadcast      chan []byte
+	register       chan *Client
+	unregister     chan *Client
+	mu             sync.RWMutex
+	handler        *MessageHandler
+	IdlePlayerTime time.Duration
+	ApiService     *api.ApiService
 }
 
 func NewServer() *Server {
-	roomManager := room.NewRoomManager()
-	roomManager.CreateRoom("room_1", "Default Room", 100, 5, 10, models.GameTypeHoldem)
+	apiService := api.NewApiService()
+	roomManager := NewRoomManager()
+	roomManager.CreateRoom("room_1", "Default Room", 100, 5, 10, GameTypeHoldem)
 
 	server := &Server{
-		clients:     make(map[string]*Client),
-		roomManager: roomManager,
-		broadcast:   make(chan []byte),
-		register:    make(chan *Client),
-		unregister:  make(chan *Client),
+		clients:        make(map[string]*Client),
+		roomManager:    roomManager,
+		broadcast:      make(chan []byte),
+		register:       make(chan *Client),
+		unregister:     make(chan *Client),
+		IdlePlayerTime: 600 * time.Second,
+		ApiService:     apiService,
 	}
 
 	server.handler = NewMessageHandler(server, roomManager)
@@ -62,13 +58,13 @@ func (s *Server) Run() {
 		select {
 		case client := <-s.register:
 			s.mu.Lock()
-			s.clients[client.PlayerID] = client
+			s.clients[client.User.Player.ID] = client
 			s.mu.Unlock()
 
 		case client := <-s.unregister:
-			if _, ok := s.clients[client.PlayerID]; ok {
+			if _, ok := s.clients[client.User.Player.ID]; ok {
 				s.mu.Lock()
-				delete(s.clients, client.PlayerID)
+				delete(s.clients, client.User.Player.ID)
 				close(client.send)
 				s.mu.Unlock()
 			}
@@ -80,7 +76,7 @@ func (s *Server) Run() {
 				case client.send <- message:
 				default:
 					close(client.send)
-					delete(s.clients, client.PlayerID)
+					delete(s.clients, client.User.Player.ID)
 				}
 			}
 			s.mu.RUnlock()
@@ -95,9 +91,16 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, playerID, err := validateTokenAsString(token)
+	_, _, err := validateTokenAsString(token)
 	if err != nil {
 		log.Printf("Failed to validate token: %v", err)
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	user, err := s.ApiService.AuthService.GetUser(token)
+	if err != nil {
+		log.Printf("Failed to get user: %v", err)
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
@@ -108,27 +111,25 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// // Get the default room
-	// for roomID := range s.rooms {
-	// 	defaultRoomID = roomID
-	// 	break
-	// }
-
 	client := &Client{
-		ID:       userID,
-		PlayerID: playerID,
-		Conn:     conn,
-		Server:   s,
-		send:     make(chan []byte, 256),
+		User:           user,
+		authToken:      token,
+		Conn:           conn,
+		IpAddress:      r.RemoteAddr,
+		ConnectionTime: time.Now(),
+		ConnectCount:   0,
+		mu:             sync.Mutex{},
+		Server:         s,
+		send:           make(chan []byte, 256),
 	}
-
+	client.Touch()
 	s.register <- client
 
-	go client.readPump()
 	go client.writePump()
+	go client.readPump()
 }
 
-func (s *Server) GetRoom(roomID string) *models.Room {
+func (s *Server) GetRoom(roomID string) *Room {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	room, err := s.roomManager.GetRoom(roomID)
@@ -147,12 +148,7 @@ func (s *Server) JoinRoom(roomID string, client *Client) error {
 		return err
 	}
 
-	room.Players = append(room.Players, &models.Player{
-		ID:       client.PlayerID,
-		Username: "Guest",
-		Picture:  "https://via.placeholder.com/150",
-		Chips:    1000,
-	})
+	room.Players = append(room.Players, client)
 
 	s.roomManager.RegisterRoom(room)
 	return nil
@@ -167,76 +163,26 @@ func (s *Server) BroadcastToRoom(roomID string, message []byte) {
 	}
 
 	for _, player := range room.Players {
-		if client, ok := s.clients[player.ID]; ok {
+		if client, ok := s.clients[player.User.Player.ID]; ok {
 			select {
 			case client.send <- message:
 			default:
 				close(client.send)
-				delete(s.clients, client.PlayerID)
+				delete(s.clients, client.User.Player.ID)
 			}
 		}
 	}
 }
 
-func (c *Client) readPump() {
-	defer func() {
-		// Remove player from game when disconnected
-		room, err := c.Server.roomManager.GetRoomByPlayerID(c.PlayerID)
-		if err != nil {
-			return
-		}
-
-		if room != nil && room.Game != nil {
-			if err := c.Server.handler.roomManager.LeaveRoom(room.ID, c.PlayerID); err != nil {
-				log.Printf("Error removing player from game: %v", err)
-			}
-			// Broadcast the updated room state to other players
-			c.Server.handler.broadcastRoomState(room)
-		}
-
-		// Unregister client from server
-		c.Server.unregister <- c
-		c.Conn.Close()
-	}()
-
-	for {
-		_, message, err := c.Conn.ReadMessage()
-		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("error: %v", err)
-			}
-			break
-		}
-
-		// Handle the message using the message handler
-		if err := c.Server.handler.HandleMessage(c, message); err != nil {
-			log.Printf("Error handling message: %v", err)
-		}
-	}
-}
-
-func (c *Client) writePump() {
-	defer func() {
-		c.Conn.Close()
-	}()
-
-	for {
+func (s *Server) BroadcastToAll(message []byte) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, client := range s.clients {
 		select {
-		case message, ok := <-c.send:
-			if !ok {
-				// Server closed the channel
-				c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
-				return
-			}
-
-			c.mu.Lock()
-			err := c.Conn.WriteMessage(websocket.TextMessage, message)
-			c.mu.Unlock()
-
-			if err != nil {
-				log.Printf("error writing message: %v", err)
-				return
-			}
+		case client.send <- message:
+		default:
+			close(client.send)
+			delete(s.clients, client.User.Player.ID)
 		}
 	}
 }
