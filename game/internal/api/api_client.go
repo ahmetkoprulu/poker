@@ -87,8 +87,8 @@ func (c *ApiClient) Delete(ctx context.Context, path string, result interface{})
 }
 
 func (c *ApiClient) Request(ctx context.Context, method, path string, payload, result interface{}) error {
-	url := c.baseUrl + path
-
+	// url := c.baseUrl + path
+	url := path
 	var body io.Reader
 	if payload != nil {
 		data, err := json.Marshal(payload)

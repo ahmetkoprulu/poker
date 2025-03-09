@@ -6,8 +6,8 @@ import (
 	"net/http"
 
 	"github.com/ahmetkoprulu/rtrp/game/common/utils"
+	"github.com/ahmetkoprulu/rtrp/game/internal"
 	"github.com/ahmetkoprulu/rtrp/game/internal/config"
-	"github.com/ahmetkoprulu/rtrp/game/internal/websocket"
 )
 
 func main() {
@@ -19,7 +19,7 @@ func main() {
 
 	utils.SetJWTSecret(config.JWTSecret)
 
-	wsServer := websocket.NewServer()
+	wsServer := internal.NewServer()
 
 	go wsServer.Run()
 

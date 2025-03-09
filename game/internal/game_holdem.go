@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
+	"math/rand"
 	"sort"
 	"time"
 
@@ -66,6 +68,7 @@ type Holdem struct {
 	game           *Game
 	actionsChannel chan GameAction
 	messageChannel chan GameMessage
+	doneChannel    chan bool
 }
 
 type HoldemAction struct {
@@ -75,30 +78,33 @@ type HoldemAction struct {
 }
 
 type HoldemState struct {
-	Pot          int
-	CurrentRound HoldemRound
-	CurrentTurn  int
-	CurrentBet   int
-
-	DealerIndex      int
-	SmallBlindAmount int
-	SmallBlindIndex  int
+	Pot              int
+	CurrentRound     HoldemRound
+	CurrentBet       int
 	BigBlindAmount   int
-	BigBlindIndex    int
+	SmallBlindAmount int
+	RoundComplete    bool
 
-	RoundComplete     bool
-	LastRaisePosition int
-	PlayerBets        map[string]int
-	PlayerHands       map[string][]models.Card
-	CommunityCards    []models.Card
+	DealerSeat     *TableSeat
+	SmallBlindSeat *TableSeat
+	BigBlindSeat   *TableSeat
+	CurrentSeat    *TableSeat
+	LastRaiserSeat *TableSeat
+	Seats          map[int]*TableSeat
+
+	PlayerBets       map[string]int
+	PlayerLastAction map[string]HoldemActionType
+	CommunityCards   []models.Card
 
 	// Side pots for all-in situations
 	// SidePots []SidePot
 }
 
-type HoldemPlayer struct {
-	PlayerID string
-	Balance  int
+type TableSeat struct {
+	Position int
+	Player   *GamePlayer
+	Next     *TableSeat
+	Prev     *TableSeat
 	Hand     []models.Card
 }
 
@@ -106,14 +112,6 @@ type HandResult struct {
 	Rank      HandRank
 	HighCards []int
 	PlayerID  string
-}
-
-func (h HoldemPlayer) GetBalance() int {
-	return h.Balance
-}
-
-func (h HoldemPlayer) GetData() interface{} {
-	return h
 }
 
 type HoldemRound int
@@ -153,24 +151,26 @@ type HoldemPlayerTurnMessage struct {
 func NewHoldem(game *Game) *Holdem {
 	return &Holdem{
 		State: HoldemState{
-			SmallBlindAmount:  5,
-			BigBlindAmount:    10,
-			CurrentRound:      PreFlop,
-			Pot:               0,
-			CurrentBet:        0,
-			DealerIndex:       -1,
-			CurrentTurn:       0,
-			SmallBlindIndex:   0,
-			BigBlindIndex:     0,
-			RoundComplete:     false,
-			LastRaisePosition: 0,
+			SmallBlindAmount: 5,
+			BigBlindAmount:   10,
+			CurrentRound:     PreFlop,
+			Pot:              0,
+			CurrentBet:       0,
+			RoundComplete:    false,
 
+			DealerSeat:     nil,
+			CurrentSeat:    nil,
+			SmallBlindSeat: nil,
+			BigBlindSeat:   nil,
+			LastRaiserSeat: nil,
+
+			Seats:          make(map[int]*TableSeat),
 			PlayerBets:     make(map[string]int),
-			PlayerHands:    make(map[string][]models.Card),
 			CommunityCards: make([]models.Card, 0),
 		},
 		actionsChannel: game.ActionChan,
 		messageChannel: game.MessageChan,
+		doneChannel:    make(chan bool),
 		deck:           models.NewDeck(),
 		game:           game,
 	}
@@ -182,177 +182,158 @@ func (h *Holdem) ProcessAction(msg json.RawMessage) error {
 		return err
 	}
 
-	player := h.game.Players[h.State.CurrentTurn]
-	log.Printf("[INFO] Player %s processing action: %+v", player.Player.ID, action)
-	if action.PlayerID != player.Player.ID {
+	player := h.State.CurrentSeat.Player
+	log.Printf("[INFO] Player %s processing action: %+v", player.Client.User.Player.ID, action)
+	if action.PlayerID != player.Client.User.Player.ID {
 		return errors.New("action received from wrong player")
 	}
 
-	if action.Action == HoldemActionRaise && h.State.CurrentBet == 0 { // Automatically convert raise to bet when no current bet exists
+	if action.Action == HoldemActionRaise && h.State.CurrentBet == 0 {
 		action.Action = HoldemActionBet
 	} else if action.Action == HoldemActionBet && h.State.CurrentBet > 0 {
 		action.Action = HoldemActionRaise
 	}
 
-	playerBet := h.State.PlayerBets[player.Player.ID]
+	playerBet := h.State.PlayerBets[player.Client.User.Player.ID]
 	toCall := min(h.State.CurrentBet-playerBet, player.Balance)
 
 	switch action.Action {
 	case HoldemActionFold:
-		log.Printf("[INFO] Player %s folds", player.Player.ID)
-		h.State.PlayerHands[player.Player.ID] = nil
+		h.State.CurrentSeat.Hand = nil
+		h.State.PlayerLastAction[player.Client.User.Player.ID] = HoldemActionFold
+		log.Printf("[INFO] Player %s folds", player.Client.User.Player.ID)
 
 	case HoldemActionCheck:
 		if toCall > 0 {
 			return errors.New("cannot check, must call or raise")
 		}
-		log.Printf("[INFO] Player %s checks", player.Player.ID)
+		h.State.PlayerBets[player.Client.User.Player.ID] += 0
+		h.State.PlayerLastAction[player.Client.User.Player.ID] = HoldemActionCheck
+		log.Printf("[INFO] Player %s checks", player.Client.User.Player.ID)
 
 	case HoldemActionCall:
 		if toCall == 0 {
 			return errors.New("nothing to call, must check")
 		}
-
 		player.Balance -= toCall
 		h.State.Pot += toCall
-		h.State.PlayerBets[player.Player.ID] += toCall
-
-		log.Printf("[INFO] Player %s calls %d", player.Player.ID, toCall)
-
-		// If player is all-in, log it
-		if player.Balance == 0 {
-			log.Printf("[INFO] Player %s is all-in", player.Player.ID)
-		}
+		h.State.PlayerBets[player.Client.User.Player.ID] += toCall
+		h.State.PlayerLastAction[player.Client.User.Player.ID] = HoldemActionCall
+		log.Printf("[INFO] Player %s calls %d", player.Client.User.Player.ID, toCall)
 
 	case HoldemActionBet:
 		if h.State.CurrentBet > 0 {
 			return errors.New("cannot bet, must raise")
 		}
-
-		// Validate bet amount
-		minBet := h.State.BigBlindAmount
-		if action.Amount < minBet {
+		if action.Amount < h.State.BigBlindAmount {
 			return errors.New("bet must be at least the big blind")
 		}
-
 		if action.Amount > player.Balance {
 			return errors.New("insufficient balance to bet")
 		}
 
 		player.Balance -= action.Amount
 		h.State.Pot += action.Amount
-		h.State.PlayerBets[player.Player.ID] += action.Amount
+		h.State.PlayerBets[player.Client.User.Player.ID] += action.Amount
 		h.State.CurrentBet = action.Amount
-		h.State.LastRaisePosition = h.State.CurrentTurn
+		h.State.LastRaiserSeat = h.State.CurrentSeat
+		h.State.PlayerLastAction[player.Client.User.Player.ID] = HoldemActionBet
 
-		log.Printf("[INFO] Player %s bets %d", player.Player.ID, action.Amount)
-
-		// If player is all-in, log it
-		if player.Balance == 0 {
-			log.Printf("[INFO] Player %s is all-in", player.Player.ID)
-		}
+		log.Printf("[INFO] Player %s bets %d", player.Client.User.Player.ID, action.Amount)
 
 	case HoldemActionRaise:
 		if h.State.CurrentBet == 0 {
 			return errors.New("cannot raise, must bet")
 		}
-
-		// Calculate minimum raise
 		minRaise := h.State.CurrentBet*2 - playerBet
-
 		if action.Amount < minRaise {
 			return errors.New("raise must be at least double the current bet")
 		}
-
 		if action.Amount > player.Balance {
 			return errors.New("insufficient balance to raise")
 		}
 
-		// Handle the raise
 		toRaise := action.Amount - playerBet
 		player.Balance -= toRaise
 		h.State.Pot += toRaise
-		h.State.PlayerBets[player.Player.ID] += toRaise
+		h.State.PlayerBets[player.Client.User.Player.ID] += toRaise
 		h.State.CurrentBet = action.Amount
-		h.State.LastRaisePosition = h.State.CurrentTurn
-
-		log.Printf("[INFO] Player %s raises to %d", player.Player.ID, action.Amount)
-
-		// If player is all-in, log it
-		if player.Balance == 0 {
-			log.Printf("[INFO] Player %s is all-in", player.Player.ID)
-		}
+		h.State.LastRaiserSeat = h.State.CurrentSeat
+		h.State.PlayerLastAction[player.Client.User.Player.ID] = HoldemActionRaise
+		log.Printf("[INFO] Player %s raises to %d", player.Client.User.Player.ID, action.Amount)
 
 	case HoldemActionAllIn:
 		if player.Balance == 0 {
 			return errors.New("player already all-in")
 		}
 
-		// All-in amount
 		allInAmount := player.Balance + playerBet
-
 		h.State.Pot += player.Balance
-		h.State.PlayerBets[player.Player.ID] += player.Balance
+		h.State.PlayerBets[player.Client.User.Player.ID] += player.Balance
 
-		// If the all-in amount is a raise, update the current bet and last raiser
 		if allInAmount > h.State.CurrentBet {
 			h.State.CurrentBet = allInAmount
-			h.State.LastRaisePosition = h.State.CurrentTurn
+			h.State.LastRaiserSeat = h.State.CurrentSeat
 		}
 
 		player.Balance = 0
-		log.Printf("[INFO] Player %s goes all-in with %d", player.Player.ID, allInAmount)
-
-	default:
-		return errors.New("invalid action")
+		h.State.PlayerLastAction[player.Client.User.Player.ID] = HoldemActionAllIn
+		log.Printf("[INFO] Player %s goes all-in with %d", player.Client.User.Player.ID, allInAmount)
 	}
 
-	// Notify all players about the action
 	h.SendMessage(HoldemMessagePlayerAction, HoldemPlayerActionMessage{
-		PlayerID:  player.Player.ID,
+		PlayerID:  player.Client.User.Player.ID,
 		Action:    action.Action,
 		Amount:    action.Amount,
 		GameState: h.GetGameState(),
 	})
 
-	h.LogGameState(fmt.Sprintf("AFTER %s ACTION BY %s", action.Action, player.Player.ID))
-	h.State.CurrentTurn = h.State.CurrentTurn + 1
-	if h.CheckRoundComplete() {
-		h.State.RoundComplete = true
-	}
+	h.LogGameState(fmt.Sprintf("AFTER %s ACTION BY %s", action.Action, player.Client.User.Player.ID))
 
 	return nil
 }
 
 func (h *Holdem) DealCards() error {
-	for _, player := range h.game.Players {
-		card1, err := h.deck.Draw()
-		if err != nil {
-			return err
-		}
-		card2, err := h.deck.Draw()
-		if err != nil {
-			return err
-		}
-
-		h.game.Mu.Lock()
-		h.State.PlayerHands[player.Player.ID] = append(h.State.PlayerHands[player.Player.ID], card1, card2)
-		h.game.Mu.Unlock()
-		log.Printf("[INFO] Dealt cards to player %s: %v", player.Player.ID, h.State.PlayerHands[player.Player.ID])
+	for _, seat := range h.State.Seats {
+		seat.Hand = seat.Hand[:0]
 	}
 
-	// Set up the community cards (flop, turn, river)
-	communityCards := make([]models.Card, 0, 5)
-	for i := 0; i < 5; i++ {
-		card, err := h.deck.Draw()
-		if err != nil {
-			return err
+	currentSeat := h.State.DealerSeat.Next
+	startPos := currentSeat.Position
+	for {
+		if currentSeat.Player.Status == GamePlayerStatusActive {
+			card, err := h.deck.Draw()
+			if err != nil {
+				return err
+			}
+			currentSeat.Hand = append(currentSeat.Hand, card)
 		}
-		communityCards = append(communityCards, card)
+		currentSeat = currentSeat.Next
+		if currentSeat.Position == startPos {
+			break
+		}
 	}
-	h.State.CommunityCards = communityCards
 
-	log.Printf("[INFO] Dealt community cards: %v", communityCards)
+	currentSeat = h.State.DealerSeat.Next
+	for {
+		if currentSeat.Player.Status == GamePlayerStatusActive {
+			card, err := h.deck.Draw()
+			if err != nil {
+				return err
+			}
+			currentSeat.Hand = append(currentSeat.Hand, card)
+			log.Printf("[INFO] Dealt cards to player %s: %v",
+				currentSeat.Player.Client.User.Player.ID, currentSeat.Hand)
+		}
+		currentSeat = currentSeat.Next
+		if currentSeat.Position == startPos {
+			break
+		}
+	}
+
+	if err := h.DealCommunityCards(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -364,7 +345,7 @@ func (h *Holdem) PlayRound() {
 	h.deck = models.NewDeck()
 
 	h.StartPreFlopRound()
-	if h.PlayersNotFoldedCount() <= 1 {
+	if !h.CanGameContinue() {
 		log.Printf("[INFO] Only one player remains - hand complete")
 		h.EvaluateHands()
 
@@ -378,7 +359,7 @@ func (h *Holdem) PlayRound() {
 
 	communityCards := h.State.CommunityCards
 	h.StartFlopRound(communityCards)
-	if h.PlayersNotFoldedCount() <= 1 {
+	if !h.CanGameContinue() {
 		log.Printf("[INFO] Only one player remains - hand complete")
 		h.EvaluateHands()
 
@@ -391,7 +372,7 @@ func (h *Holdem) PlayRound() {
 	}
 
 	h.StartTurnRound(communityCards)
-	if h.PlayersNotFoldedCount() <= 1 {
+	if !h.CanGameContinue() {
 		log.Printf("[INFO] Only one player remains - hand complete")
 		h.EvaluateHands()
 
@@ -409,19 +390,26 @@ func (h *Holdem) PlayRound() {
 	h.EvaluateHands()
 	h.LogGameState("HAND COMPLETE")
 
+	timer := time.NewTimer(1 * time.Second)
+	<-timer.C
+
 	if h.CanGameContinue() {
 		h.PlayRound()
 	} else {
 		h.End()
 	}
+
+	h.LogGameState("HAND COMPLETE")
 }
 
 func (h *Holdem) StartPreFlopRound() {
-	h.State.Pot = 0
-	h.State.CurrentBet = 0
 	h.State.CurrentRound = PreFlop
 	h.State.RoundComplete = false
-	h.State.LastRaisePosition = -1
+	h.State.Pot = 0
+	h.State.CurrentBet = 0
+	h.State.LastRaiserSeat = nil
+	h.State.PlayerBets = make(map[string]int)
+	h.State.PlayerLastAction = make(map[string]HoldemActionType)
 
 	h.RotateDealerButton()
 	if !h.SetBlindPositions() {
@@ -437,15 +425,11 @@ func (h *Holdem) StartPreFlopRound() {
 	}
 
 	h.PostBlinds()
-	startingPos := h.State.BigBlindIndex + 1 // In PreFlop, action starts with player after big blind
-	activePlayers := h.GetPlayersInRound()
-	h.State.CurrentTurn = startingPos % len(activePlayers)
 
-	h.LogGameState(fmt.Sprintf("HAND STARTED - PRE-FLOP BETTING BEGINS Small Blind: %d, Big Blind: %d, Current Turn: %d", h.State.SmallBlindIndex, h.State.BigBlindIndex, h.State.CurrentTurn))
-	log.Printf("[INFO] Starting pre-flop betting")
+	h.State.CurrentSeat = h.State.BigBlindSeat.Next
+	h.LogGameState(fmt.Sprintf("HAND STARTED - PRE-FLOP BETTING BEGINS Small Blind: %d, Big Blind: %d", h.State.SmallBlindSeat.Position, h.State.BigBlindSeat.Position))
 	if err := h.BettingRound(); err != nil {
 		log.Printf("[ERROR] Betting round error: %v", err)
-		h.End()
 		return
 	}
 	h.LogGameState("PRE-FLOP BETTING COMPLETE")
@@ -454,16 +438,16 @@ func (h *Holdem) StartPreFlopRound() {
 func (h *Holdem) StartFlopRound(communityCards []models.Card) {
 	h.State.CurrentRound = Flop
 	h.State.RoundComplete = false
-	h.State.CommunityCards = communityCards[:3]
 	h.State.CurrentBet = 0
-	// In post-flop betting rounds, action starts with first active player after dealer
-	h.State.CurrentTurn = h.State.DealerIndex + 1
-	h.State.LastRaisePosition = -1
+	h.State.LastRaiserSeat = nil
+	h.State.PlayerBets = make(map[string]int)
+	h.State.PlayerLastAction = make(map[string]HoldemActionType)
 
-	h.LogGameState("FLOP DEALT - FLOP BETTING BEGINS")
+	h.State.CommunityCards = communityCards[:3]
+	h.State.CurrentSeat = h.State.DealerSeat.Next
+	h.LogGameState("FLOP BETTING BEGINS")
 	if err := h.BettingRound(); err != nil {
 		log.Printf("[ERROR] Betting round error: %v", err)
-		h.End()
 		return
 	}
 	h.LogGameState("FLOP BETTING COMPLETE")
@@ -472,15 +456,15 @@ func (h *Holdem) StartFlopRound(communityCards []models.Card) {
 func (h *Holdem) StartTurnRound(communityCards []models.Card) {
 	h.State.CurrentRound = Turn
 	h.State.RoundComplete = false
-	h.State.CommunityCards = communityCards[:4]
 	h.State.CurrentBet = 0
-	h.State.CurrentTurn = h.State.DealerIndex + 1
-	h.State.LastRaisePosition = -1
-
+	h.State.LastRaiserSeat = nil
+	h.State.PlayerBets = make(map[string]int)
+	h.State.PlayerLastAction = make(map[string]HoldemActionType)
+	h.State.CommunityCards = communityCards[:4]
+	h.State.CurrentSeat = h.State.DealerSeat.Next
 	h.LogGameState("TURN DEALT - TURN BETTING BEGINS")
 	if err := h.BettingRound(); err != nil {
 		log.Printf("[ERROR] Betting round error: %v", err)
-		h.End()
 		return
 	}
 	h.LogGameState("TURN BETTING COMPLETE")
@@ -489,38 +473,35 @@ func (h *Holdem) StartTurnRound(communityCards []models.Card) {
 func (h *Holdem) StartRiverRound(communityCards []models.Card) {
 	h.State.CurrentRound = River
 	h.State.RoundComplete = false
-	h.State.CommunityCards = communityCards[:5]
 	h.State.CurrentBet = 0
-	h.State.CurrentTurn = h.State.DealerIndex + 1
-	h.State.LastRaisePosition = -1
+	h.State.LastRaiserSeat = nil
+	h.State.PlayerBets = make(map[string]int)
+	h.State.PlayerLastAction = make(map[string]HoldemActionType)
 
+	h.State.CommunityCards = communityCards[:5]
+	h.State.CurrentSeat = h.State.DealerSeat.Next
 	h.LogGameState("RIVER DEALT - RIVER BETTING BEGINS")
 	if err := h.BettingRound(); err != nil {
 		log.Printf("[ERROR] Betting round error: %v", err)
-		h.End()
 		return
 	}
 	h.LogGameState("RIVER BETTING COMPLETE")
 }
 
 func (h *Holdem) PostBlinds() {
-	smallBlindPlayer := h.game.Players[h.State.SmallBlindIndex]
-	smallBlindAmount := min(h.State.SmallBlindAmount, smallBlindPlayer.Balance)
-
-	smallBlindPlayer.Balance -= smallBlindAmount
+	smallBlindAmount := min(h.State.SmallBlindAmount, h.State.SmallBlindSeat.Player.Balance)
+	h.State.SmallBlindSeat.Player.Balance -= smallBlindAmount
 	h.State.Pot += smallBlindAmount
-	h.State.PlayerBets[smallBlindPlayer.Player.ID] = smallBlindAmount
+	h.State.PlayerBets[h.State.SmallBlindSeat.Player.Client.User.Player.ID] = smallBlindAmount
 
-	bigBlindPlayer := h.game.Players[h.State.BigBlindIndex]
-	bigBlindAmount := min(h.State.BigBlindAmount, bigBlindPlayer.Balance)
-
-	bigBlindPlayer.Balance -= bigBlindAmount
+	bigBlindAmount := min(h.State.BigBlindAmount, h.State.BigBlindSeat.Player.Balance)
+	h.State.BigBlindSeat.Player.Balance -= bigBlindAmount
 	h.State.Pot += bigBlindAmount
 	h.State.CurrentBet = bigBlindAmount
-	h.State.PlayerBets[bigBlindPlayer.Player.ID] = bigBlindAmount
+	h.State.PlayerBets[h.State.BigBlindSeat.Player.Client.User.Player.ID] = bigBlindAmount
 
-	log.Printf("[BLINDS] Player %s posts small blind %d", smallBlindPlayer.Player.ID, smallBlindAmount)
-	log.Printf("[BLINDS] Player %s posts big blind: %d", bigBlindPlayer.Player.ID, bigBlindAmount)
+	log.Printf("[BLINDS] Player %s posts small blind %d", h.State.SmallBlindSeat.Player.Client.User.Player.ID, smallBlindAmount)
+	log.Printf("[BLINDS] Player %s posts big blind: %d", h.State.BigBlindSeat.Player.Client.User.Player.ID, bigBlindAmount)
 }
 
 func (h *Holdem) NextActivePlayerAfter(pos int) int {
@@ -533,59 +514,36 @@ func (h *Holdem) NextActivePlayerAfter(pos int) int {
 
 func (h *Holdem) BettingRound() error {
 	log.Printf("[INFO] Starting betting round for %v", h.State.CurrentRound)
-	h.State.PlayerBets = make(map[string]int)
-	for _, player := range h.game.Players {
-		h.State.PlayerBets[player.Player.ID] = 0
-	}
-
-	activePlayers := h.GetPlayersInRound()
-
-	h.State.RoundComplete = false
 	for !h.State.RoundComplete {
-		log.Printf("[DEBUG] Round state - CurrentTurn: %d, RoundComplete: %v", h.State.CurrentTurn, h.State.RoundComplete)
-		if h.CheckRoundComplete() {
-			h.State.RoundComplete = true
-			log.Printf("[DEBUG] Round completed naturally")
-			break
+		if h.State.CurrentSeat == nil {
+			return errors.New("no current seat")
 		}
 
-		if h.State.CurrentTurn >= len(activePlayers) {
-			h.State.CurrentTurn = 0
-		}
-
-		player := activePlayers[h.State.CurrentTurn]
-		if h.State.PlayerHands[player.Player.ID] == nil || player.Balance == 0 { // Skip players who have folded or are all-in
-			h.State.CurrentTurn = (h.State.CurrentTurn + 1) % len(activePlayers)
-			if h.CheckRoundComplete() {
-				h.State.RoundComplete = true
-			}
-
+		player := h.State.CurrentSeat.Player
+		if h.State.CurrentSeat.Hand == nil || player.Balance == 0 { // Skip folded or all-in players
+			h.State.CurrentSeat = h.State.CurrentSeat.Next
 			continue
 		}
 
-		// Notify current player it's their turn
-		h.SendMessageToPlayer(player.Player.ID, HoldemMessagePlayerTurn, HoldemPlayerTurnMessage{
+		h.SendMessageToPlayer(player.Client.User.Player.ID, HoldemMessagePlayerTurn, HoldemPlayerTurnMessage{
 			GameState: h.GetGameState(),
 			Timeout:   10, // 5 seconds timeout for action
 		})
 
-		log.Printf("[INFO] Waiting for action from player %s", player.Player.ID)
-
-		playerBet := h.State.PlayerBets[player.Player.ID]
+		playerBet := h.State.PlayerBets[player.Client.User.Player.ID]
 		toCall := h.State.CurrentBet - playerBet
-		log.Printf("[ACTION] Player %s to act | Current bet: $%d | Player bet: $%d | To call: $%d | Balance: $%d", player.Player.ID, h.State.CurrentBet, playerBet, toCall, player.Balance)
+		log.Printf("[ACTION] Player %s to act | Current bet: $%d | Player bet: $%d | To call: $%d | Balance: $%d", player.Client.User.Player.ID, h.State.CurrentBet, playerBet, toCall, player.Balance)
 
 		timer := time.NewTimer(5 * time.Second)
 		actionReceived := make(chan bool, 1)
 		go func() {
 			select {
 			case action := <-h.actionsChannel:
-				if action.PlayerID == player.Player.ID {
+				if action.PlayerID == player.Client.User.Player.ID {
 					if err := h.ProcessAction(action.Data); err != nil {
 						log.Printf("[ERROR] Failed to process action: %v", err)
-
 						fold := HoldemAction{
-							PlayerID: player.Player.ID,
+							PlayerID: player.Client.User.Player.ID,
 							Action:   HoldemActionFold,
 						}
 						foldData, _ := json.Marshal(fold)
@@ -594,87 +552,101 @@ func (h *Holdem) BettingRound() error {
 					actionReceived <- true
 				}
 			case <-timer.C:
-				log.Printf("[INFO] Player %s timed out", player.Player.ID)
-
-				// Auto-check if possible, otherwise fold
-				playerBet := h.State.PlayerBets[player.Player.ID]
-				toCall := h.State.CurrentBet - playerBet
-
-				var autoAction HoldemAction
-				if toCall == 0 {
-					autoAction = HoldemAction{
-						PlayerID: player.Player.ID,
-						Action:   HoldemActionCheck,
-					}
-				} else if toCall <= player.Balance {
-					autoAction = HoldemAction{
-						PlayerID: player.Player.ID,
-						Action:   HoldemActionCall,
-					}
-				} else {
-					autoAction = HoldemAction{
-						PlayerID: player.Player.ID,
-						Action:   HoldemActionFold,
-					}
-				}
-
-				autoData, _ := json.Marshal(autoAction)
-				h.ProcessAction(autoData)
+				log.Printf("[INFO] Player %s timed out", player.Client.User.Player.ID)
+				h.handleTimeoutAction(player, toCall)
 				actionReceived <- true
 			}
 		}()
 
+		if !h.CanGameContinue() {
+			return errors.New("not enough players to continue game")
+		}
+
 		<-actionReceived
 		timer.Stop()
+
+		if h.CheckRoundComplete() {
+			h.State.RoundComplete = true
+			log.Printf("[DEBUG] Round completed naturally")
+			h.SendMessage(HoldemMessageRoundEnd, h.GetGameState())
+			break
+		}
+
+		h.State.CurrentSeat = h.State.CurrentSeat.Next
 	}
 
 	log.Printf("[INFO] Betting round complete for %v", h.State.CurrentRound)
 	return nil
 }
 
+func (h *Holdem) handleTimeoutAction(player *GamePlayer, toCall int) {
+	var autoAction HoldemAction
+	random := rand.Intn(100)
+
+	if toCall > 0 && toCall <= player.Balance {
+		autoAction = HoldemAction{
+			PlayerID: player.Client.User.Player.ID,
+			Action:   HoldemActionCall,
+			Amount:   toCall,
+		}
+	} else if random >= 50 {
+		autoAction = HoldemAction{
+			PlayerID: player.Client.User.Player.ID,
+			Action:   HoldemActionRaise,
+			Amount:   player.Balance * 2 / 100,
+		}
+	} else if toCall == 0 && random < 50 {
+		autoAction = HoldemAction{
+			PlayerID: player.Client.User.Player.ID,
+			Action:   HoldemActionCheck,
+		}
+	} else {
+		autoAction = HoldemAction{
+			PlayerID: player.Client.User.Player.ID,
+			Action:   HoldemActionFold,
+		}
+	}
+
+	autoData, _ := json.Marshal(autoAction)
+	h.ProcessAction(autoData)
+}
+
 func (h *Holdem) DealPlayerCards() error {
 	h.deck.Shuffle()
-
-	// Clear any existing hands
-	for _, player := range h.game.Players {
-		h.State.PlayerHands[player.Player.ID] = make([]models.Card, 0, 2)
+	for pos := range h.State.Seats {
+		h.State.Seats[pos].Hand = h.State.Seats[pos].Hand[:0]
 	}
 
-	// Deal cards in the correct order (one card at a time, starting with player after dealer)
-	startPos := (h.State.DealerIndex + 1) % len(h.game.Players)
+	startPos := h.State.DealerSeat.Next.Position
+	for i := 0; i < len(h.State.Seats); i++ {
+		playerPos := (startPos + i) % len(h.State.Seats)
+		seat := h.State.Seats[playerPos]
 
-	// First round of cards
-	for i := 0; i < len(h.game.Players); i++ {
-		playerPos := (startPos + i) % len(h.game.Players)
-		player := h.game.Players[playerPos]
-
-		if player.Status == GamePlayerStatusActive {
+		if seat.Player.Status == GamePlayerStatusActive {
 			card, err := h.deck.Draw()
 			if err != nil {
 				return err
 			}
-			h.State.PlayerHands[player.Player.ID] = append(h.State.PlayerHands[player.Player.ID], card)
+			seat.Hand = append(seat.Hand, card)
 		}
 	}
 
-	// Second round of cards
-	for i := 0; i < len(h.game.Players); i++ {
-		playerPos := (startPos + i) % len(h.game.Players)
-		player := h.game.Players[playerPos]
+	for i := 0; i < len(h.State.Seats); i++ {
+		playerPos := (startPos + i) % len(h.State.Seats)
+		seat := h.State.Seats[playerPos]
 
-		if player.Status == GamePlayerStatusActive {
+		if seat.Player.Status == GamePlayerStatusActive {
 			card, err := h.deck.Draw()
 			if err != nil {
 				return err
 			}
-			h.State.PlayerHands[player.Player.ID] = append(h.State.PlayerHands[player.Player.ID], card)
+			seat.Hand = append(seat.Hand, card)
 		}
 	}
 
-	// Log player hands (for debugging)
-	for _, player := range h.game.Players {
-		if player.Status == GamePlayerStatusActive {
-			log.Printf("[INFO] Player %s received cards: %v", player.Player.ID, h.State.PlayerHands[player.Player.ID])
+	for _, seat := range h.State.Seats {
+		if seat.Player.Status == GamePlayerStatusActive {
+			log.Printf("[INFO] Player %s received cards: %v", seat.Player.Client.User.Player.ID, seat.Hand)
 		}
 	}
 
@@ -735,8 +707,6 @@ func (h *Holdem) DealCommunityCards() error {
 func (h *Holdem) HandlePlayers() {
 	h.game.Mu.Lock()
 	defer h.game.Mu.Unlock()
-
-	filteredPlayers := []*GamePlayer{}
 	for _, player := range h.game.Players {
 		if player.Status == GamePlayerStatusInactive || player.Balance < h.game.MinBet {
 			continue
@@ -745,70 +715,142 @@ func (h *Holdem) HandlePlayers() {
 		if player.Status == GamePlayerStatusWaiting {
 			player.Status = GamePlayerStatusActive
 		}
-
-		h.State.PlayerHands[player.Player.ID] = make([]models.Card, 0)
-		filteredPlayers = append(filteredPlayers, player)
+		_, ok := h.State.Seats[player.Position]
+		if !ok {
+			h.State.Seats[player.Position] = &TableSeat{
+				Position: player.Position,
+				Player:   player,
+				Hand:     make([]models.Card, 0, 2),
+			}
+		}
 	}
 
-	sort.Slice(filteredPlayers, func(i, j int) bool {
-		return filteredPlayers[i].Position < filteredPlayers[j].Position
-	})
+	h.LinkSeats()
+}
 
-	h.game.Players = filteredPlayers
+func (h *Holdem) LinkSeats() {
+	if len(h.State.Seats) == 0 {
+		return
+	}
+
+	positions := make([]int, 0, len(h.State.Seats))
+	for pos := range h.State.Seats {
+		positions = append(positions, pos)
+	}
+
+	sort.Ints(positions)
+
+	for i := 0; i < len(positions); i++ {
+		position := positions[i]
+		seat := h.State.Seats[position]
+		nextIdx := (i + 1) % len(positions)
+		prevIdx := (i - 1 + len(positions)) % len(positions)
+
+		seat.Next = h.State.Seats[positions[nextIdx]]
+		seat.Prev = h.State.Seats[positions[prevIdx]]
+	}
 }
 
 func (h *Holdem) CheckRoundComplete() bool {
-	activePlayers := h.GetPlayersInRound()
-	if len(activePlayers) == 0 {
-		return true
+	if len(h.State.PlayerBets) == 0 {
+		return false
 	}
 
-	// If there's no current bet, round is complete when all players have acted
-	if h.State.CurrentBet == 0 {
-		return h.State.CurrentTurn >= len(activePlayers)
+	highestBet := 0
+	for _, bet := range h.State.PlayerBets {
+		if bet > highestBet {
+			highestBet = bet
+		}
 	}
 
-	// Check if all active players have acted and all bets are equal
-	allBetsEqual := true
-	lastPlayerActed := -1
+	var startSeat *TableSeat           // Determine where to start checking from
+	if h.State.LastRaiserSeat != nil { // If someone raised, start from the seat after them
+		startSeat = h.State.LastRaiserSeat.Next
+	} else {
+		// If no one raised (everyone checked/called),
+		// start from the seat after the big blind in pre-flop
+		// or from the seat after the dealer in post-flop rounds
+		if h.State.CurrentRound == PreFlop {
+			startSeat = h.State.BigBlindSeat.Next
+		} else {
+			startSeat = h.State.DealerSeat.Next
+		}
+	}
+	currentSeat := startSeat
 
-	for i, player := range activePlayers {
-		playerBet := h.State.PlayerBets[player.Player.ID]
-		if playerBet != h.State.CurrentBet {
-			allBetsEqual = false
+	// If we have gone all the way around back to the startSeat, we are done
+	for {
+		// Skip folded or all-in players
+		if currentSeat.Player != nil && currentSeat.Hand != nil && len(currentSeat.Hand) > 0 {
+			playerBet, exists := h.State.PlayerBets[currentSeat.Player.Client.User.Player.ID]
+			_, lastActionExists := h.State.PlayerLastAction[currentSeat.Player.Client.User.Player.ID]
+			if !exists || playerBet < highestBet || !lastActionExists { // If player hasn't bet or their bet is less than the highest bet, round is not complete
+				return false
+			}
+		}
+
+		currentSeat = currentSeat.Next
+		if currentSeat == startSeat { // If we've gone full circle and returned to starting point, we're done checking
 			break
 		}
-		if h.State.PlayerHands[player.Player.ID] != nil { // Player hasn't folded
-			lastPlayerActed = i
-		}
 	}
 
-	// If all bets are equal and we've reached the last active player after the last raiser
-	if allBetsEqual {
-		// In pre-flop, small blind and big blind get to act again if there are raises
-		if h.State.CurrentRound == PreFlop {
-			if h.State.LastRaisePosition == -1 {
-				return lastPlayerActed >= h.State.BigBlindIndex
-			}
-			return lastPlayerActed >= h.State.LastRaisePosition
-		}
-		// In post-flop rounds, round is complete when we've acted past the last raiser
-		return lastPlayerActed >= h.State.LastRaisePosition
+	// If we've made it here, all active players have either:
+	// 1. Folded
+	// 2. Gone all-in
+	// 3. Called the highest bet
+	return true
+}
+
+// Helper function to get the first player to act in the current round
+func (h *Holdem) GetFirstToActInRound() *TableSeat {
+	if h.State.CurrentRound == PreFlop { // In pre-flop, action starts after the big blind
+		return h.State.BigBlindSeat.Next
+	} else { // In post-flop rounds, action starts after the dealer
+		return h.State.DealerSeat.Next
+	}
+}
+
+// Helper function to check if seat a has acted after seat b
+func (h *Holdem) hasActedAfter(seatA, seatB *TableSeat) bool {
+	if seatA == nil || seatB == nil {
+		return false
 	}
 
-	return false
+	if seatA == seatB { // If they're the same seat, return false (need to go around the table)
+		return false
+	}
+
+	current := seatB
+	for { // Start from seatB and move forward until we either find seatA or come back to seatB
+		current = current.Next
+		if current == seatA {
+			return true
+		}
+		if current == seatB {
+			return false
+		}
+	}
 }
 
 func (h *Holdem) CanGameContinue() bool {
 	// Check if there are at least 2 players with chips
 	playersWithChips := 0
 	for _, player := range h.game.Players {
-		if player.Balance >= h.game.MinBet && player.Status == GamePlayerStatusActive {
+		if player.Status == GamePlayerStatusActive {
 			playersWithChips++
 		}
 	}
 
-	return playersWithChips >= 2
+	if playersWithChips < 2 {
+		return false
+	}
+
+	if h.PlayersNotFoldedCount() <= 1 {
+		return false
+	}
+
+	return true
 }
 
 func (h *Holdem) Start() error {
@@ -817,6 +859,7 @@ func (h *Holdem) Start() error {
 	}
 
 	h.game.Status = GameStatusStarted
+	h.State.DealerSeat = nil
 	log.Printf("[INFO] Starting holdem game")
 
 	for _, player := range h.game.Players { // Initialize all waiting players as active with starting chips
@@ -825,8 +868,11 @@ func (h *Holdem) Start() error {
 		}
 	}
 
+	go h.StartMessageChannel()
+
 	h.LogGameState("GAME STARTING")
 	h.SendMessage(HoldemMessageGameStart, h.GetGameState())
+
 	go h.PlayRound()
 
 	return nil
@@ -838,6 +884,7 @@ func (h *Holdem) End() error {
 
 	h.LogGameState("GAME ENDED")
 	h.SendMessage(HoldemMessageGameEnd, h.GetGameState())
+	h.doneChannel <- true
 
 	return nil
 }
@@ -855,13 +902,8 @@ func (h *Holdem) CanStart() bool {
 
 func (h *Holdem) PlayersNotFoldedCount() int {
 	count := 0
-	for _, player := range h.game.Players {
-		if h.State.PlayerHands[player.Player.ID] != nil {
-			count++
-			continue
-		}
-
-		if len(h.State.PlayerHands[player.Player.ID]) > 0 {
+	for _, seat := range h.State.Seats {
+		if seat.Hand != nil && len(seat.Hand) > 0 {
 			count++
 		}
 	}
@@ -871,7 +913,7 @@ func (h *Holdem) PlayersNotFoldedCount() int {
 
 func (h *Holdem) OnPlayerJoin(player *GamePlayer) error {
 	player.Status = GamePlayerStatusWaiting
-	log.Printf("[INFO] Player %s joined the game", player.Player.ID)
+	log.Printf("[INFO] Player %s joined the game", player.Client.User.Player.ID)
 
 	if h.game.Status == GameStatusWaiting && h.CanStart() {
 		err := h.Start()
@@ -885,38 +927,41 @@ func (h *Holdem) OnPlayerJoin(player *GamePlayer) error {
 
 func (h *Holdem) OnPlayerLeave(player *GamePlayer) error {
 	player.Status = GamePlayerStatusInactive
-	log.Printf("[INFO] Player %s left the game", player.Player.ID)
+	log.Printf("[INFO] Player %s left the game", player.Client.User.Player.ID)
 
 	return nil
 }
 
 func (h *Holdem) RotateDealerButton() {
-	activePlayers := h.GetPlayersInRound()
-	if len(activePlayers) == 0 {
+	if len(h.State.Seats) == 0 {
 		return
 	}
 
-	currentDealerIndex := h.State.DealerIndex
-	if currentDealerIndex == -1 || h.game.Status == GameStatusStarting {
-		h.State.DealerIndex = 0
+	if h.State.DealerSeat == nil || h.game.Status == GameStatusStarting {
+		// Find the lowest position number for initial dealer
+		minPos := math.MaxInt32
+		for pos := range h.State.Seats {
+			if pos < minPos {
+				minPos = pos
+				h.State.DealerSeat = h.State.Seats[pos]
+			}
+		}
 	} else {
-		nextDealerIndex := (currentDealerIndex + 1) % len(activePlayers)
-		h.State.DealerIndex = nextDealerIndex
+		h.State.DealerSeat = h.State.DealerSeat.Next
 	}
 }
 
 func (h *Holdem) SetBlindPositions() bool {
-	activePlayers := h.GetPlayersInRound()
-	if len(activePlayers) < 2 {
+	if len(h.State.Seats) < 2 {
 		return false
 	}
 
-	if len(activePlayers) == 2 { // In heads-up (2 players), dealer is small blind
-		h.State.SmallBlindIndex = h.State.DealerIndex
-		h.State.BigBlindIndex = (h.State.DealerIndex + 1) % 2
-	} else { // With more players, small blind is after dealer
-		h.State.SmallBlindIndex = (h.State.DealerIndex + 1) % len(activePlayers)
-		h.State.BigBlindIndex = (h.State.DealerIndex + 2) % len(activePlayers)
+	if len(h.State.Seats) == 2 { // Heads-up
+		h.State.SmallBlindSeat = h.State.DealerSeat // In heads-up, dealer is SB
+		h.State.BigBlindSeat = h.State.DealerSeat.Next
+	} else {
+		h.State.SmallBlindSeat = h.State.DealerSeat.Next
+		h.State.BigBlindSeat = h.State.SmallBlindSeat.Next
 	}
 
 	return true
@@ -924,10 +969,17 @@ func (h *Holdem) SetBlindPositions() bool {
 
 func (h *Holdem) EvaluateHands() error {
 	log.Println("[INFO] Evaluating hands")
-	activePlayers := []*GamePlayer{}
-	for _, player := range h.game.Players {
-		if h.State.PlayerHands[player.Player.ID] != nil && len(h.State.PlayerHands[player.Player.ID]) > 0 {
-			activePlayers = append(activePlayers, player)
+	activePlayers := []*TableSeat{}
+	currentSeat := h.State.DealerSeat
+	startPos := currentSeat.Position
+
+	for {
+		if currentSeat.Hand != nil && len(currentSeat.Hand) > 0 {
+			activePlayers = append(activePlayers, currentSeat)
+		}
+		currentSeat = currentSeat.Next
+		if currentSeat.Position == startPos {
+			break
 		}
 	}
 
@@ -938,11 +990,11 @@ func (h *Holdem) EvaluateHands() error {
 
 	if len(activePlayers) == 1 {
 		winner := activePlayers[0]
-		winner.Balance += h.State.Pot
-		log.Printf("[INFO] Player %s wins %d (uncontested)", winner.Player.ID, h.State.Pot)
+		winner.Player.Balance += h.State.Pot
+		log.Printf("[INFO] Player %s wins %d (uncontested)", winner.Player.Client.User.Player.ID, h.State.Pot)
 
 		h.SendMessage(HoldemMessageWinner, HoldemWinnerMessage{
-			WinnerID: winner.Player.ID,
+			WinnerID: winner.Player.Client.User.Player.ID,
 			Amount:   h.State.Pot,
 			Reason:   "uncontested",
 		})
@@ -952,20 +1004,18 @@ func (h *Holdem) EvaluateHands() error {
 	}
 
 	results := []HandResult{}
-	for _, player := range activePlayers {
-		allCards := append([]models.Card{}, h.State.PlayerHands[player.Player.ID]...)
+	for _, seat := range activePlayers {
+		allCards := append([]models.Card{}, seat.Hand...)
 		allCards = append(allCards, h.State.CommunityCards...)
 
-		// Get best 5-card hand
 		handRank, highCards := evaluateBestHand(allCards)
-
 		results = append(results, HandResult{
 			Rank:      handRank,
 			HighCards: highCards,
-			PlayerID:  player.Player.ID,
+			PlayerID:  seat.Player.Client.User.Player.ID,
 		})
 
-		log.Printf("[INFO] Player %s has %d", player.Player.ID, handRank)
+		log.Printf("[INFO] Player %s has %v (rank: %d)", seat.Player.Client.User.Player.ID, seat.Hand, handRank)
 	}
 
 	sort.Slice(results, func(i, j int) bool {
@@ -978,8 +1028,6 @@ func (h *Holdem) EvaluateHands() error {
 				return results[i].HighCards[k] > results[j].HighCards[k]
 			}
 		}
-
-		// Completely equal hands
 		return false
 	})
 
@@ -997,12 +1045,11 @@ func (h *Holdem) EvaluateHands() error {
 	remaining := h.State.Pot % len(winners)
 
 	for _, winner := range winners {
-		for _, player := range h.game.Players {
-			if player.Player.ID == winner.PlayerID {
-				player.Balance += winAmount
-				// Give any remainder to the first winner (arbitrary but consistent)
-				if remaining > 0 && player.Player.ID == winners[0].PlayerID {
-					player.Balance += remaining
+		for _, seat := range h.State.Seats {
+			if seat.Player.Client.User.Player.ID == winner.PlayerID {
+				seat.Player.Balance += winAmount
+				if remaining > 0 && seat.Player.Client.User.Player.ID == winners[0].PlayerID {
+					seat.Player.Balance += remaining
 					remaining = 0
 				}
 				break
@@ -1013,14 +1060,11 @@ func (h *Holdem) EvaluateHands() error {
 	if len(winners) == 1 {
 		log.Printf("[INFO] Player %s wins %d with %d", winners[0].PlayerID, h.State.Pot, winners[0].Rank)
 	} else {
-		winnerIDs := ""
+		winnerIDs := make([]string, len(winners))
 		for i, winner := range winners {
-			if i > 0 {
-				winnerIDs += ", "
-			}
-			winnerIDs += winner.PlayerID
+			winnerIDs[i] = winner.PlayerID
 		}
-		log.Printf("[INFO] Players %s split the pot (%d each) with %d", winnerIDs, winAmount, winners[0].Rank)
+		log.Printf("[INFO] Players %v split the pot (%d each) with %d", winnerIDs, winAmount, winners[0].Rank)
 	}
 
 	h.SendMessage(HoldemMessageShowdown, HoldemShowdownMessage{
@@ -1360,6 +1404,27 @@ func (h *Holdem) SendMessageToPlayer(playerID string, msgType HoldemMessageType,
 	}
 }
 
+func (h *Holdem) StartMessageChannel() {
+	go func() {
+		for {
+			select {
+			case msg := <-h.messageChannel:
+				if msg.ToGame {
+					h.game.Room.SendMessageToRoom(msg)
+				} else if msg.PlayerID == "" {
+					h.game.Room.SendMessageToPlayer(msg.PlayerID, msg)
+				} else {
+					h.game.Room.SendMessageToRoom(msg)
+				}
+			case <-h.doneChannel:
+				return
+			default:
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+	}()
+}
+
 func (h *Holdem) GetPlayersInRound() []*GamePlayer {
 	activePlayers := []*GamePlayer{}
 
@@ -1384,39 +1449,30 @@ func (h *Holdem) GetActivePlayers() []*GamePlayer {
 	return activePlayers
 }
 
+type PlayerView struct {
+	ID            string           `json:"id"`
+	Status        GamePlayerStatus `json:"status"`
+	Position      int              `json:"position"`
+	Name          string           `json:"name"`
+	Balance       int              `json:"balance"`
+	HasCards      bool             `json:"has_cards"`
+	IsFolded      bool             `json:"is_folded"`
+	IsAllIn       bool             `json:"is_all_in"`
+	IsDealer      bool             `json:"is_dealer"`
+	IsSmallBlind  bool             `json:"is_small_blind"`
+	IsBigBlind    bool             `json:"is_big_blind"`
+	IsCurrentTurn bool             `json:"is_current_turn"`
+}
+
+type GameView struct {
+	Players        []PlayerView
+	CommunityCards []models.Card
+	Pot            int
+	CurrentBet     int
+	CurrentRound   HoldemRound
+}
+
 func (h *Holdem) GetGameState() interface{} {
-	type PlayerView struct {
-		ID            string
-		Name          string
-		Balance       int
-		HasCards      bool
-		Folded        bool
-		IsDealer      bool
-		IsSmallBlind  bool
-		IsBigBlind    bool
-		IsCurrentTurn bool
-	}
-
-	type GameView struct {
-		Players        []PlayerView
-		CommunityCards []models.Card
-		Pot            int
-		CurrentBet     int
-		CurrentRound   string
-	}
-
-	roundName := "preflop"
-	switch h.State.CurrentRound {
-	case Flop:
-		roundName = "flop"
-	case Turn:
-		roundName = "turn"
-	case River:
-		roundName = "river"
-	case Showdown:
-		roundName = "showdown"
-	}
-
 	visibleCards := []models.Card{}
 	switch h.State.CurrentRound {
 	case Flop:
@@ -1429,17 +1485,31 @@ func (h *Holdem) GetGameState() interface{} {
 
 	playerViews := []PlayerView{}
 	for i, player := range h.game.Players {
-		playerViews = append(playerViews, PlayerView{
-			ID:            player.Player.ID,
-			Name:          player.Player.Username,
-			Balance:       player.Balance,
-			HasCards:      len(h.State.PlayerHands[player.Player.ID]) > 0,
-			Folded:        h.State.PlayerHands[player.Player.ID] == nil,
-			IsDealer:      i == h.State.DealerIndex,
-			IsSmallBlind:  i == h.State.SmallBlindIndex,
-			IsBigBlind:    i == h.State.BigBlindIndex,
-			IsCurrentTurn: i == h.State.CurrentTurn,
-		})
+		playerView := PlayerView{
+			ID:       player.Client.User.Player.ID,
+			Status:   player.Status,
+			Position: player.Position,
+			Name:     player.Client.User.Player.Username,
+			Balance:  player.Balance,
+			HasCards: false,
+			IsFolded: false,
+			IsAllIn:  false,
+		}
+
+		seat, ok := h.State.Seats[player.Position]
+		if !ok {
+			playerViews = append(playerViews, playerView)
+			continue
+		}
+
+		playerView.HasCards = seat.Hand != nil
+		playerView.IsFolded = player.Status != GamePlayerStatusWaiting && seat.Hand == nil
+		playerView.IsAllIn = player.Status != GamePlayerStatusWaiting && player.Balance == 0
+		playerView.IsDealer = i == h.State.DealerSeat.Position
+		playerView.IsSmallBlind = i == h.State.SmallBlindSeat.Position
+		playerView.IsBigBlind = i == h.State.BigBlindSeat.Position
+		playerView.IsCurrentTurn = i == h.State.CurrentSeat.Position
+		playerViews = append(playerViews, playerView)
 	}
 
 	return GameView{
@@ -1447,26 +1517,26 @@ func (h *Holdem) GetGameState() interface{} {
 		CommunityCards: visibleCards,
 		Pot:            h.State.Pot,
 		CurrentBet:     h.State.CurrentBet,
-		CurrentRound:   roundName,
+		CurrentRound:   h.State.CurrentRound,
 	}
 }
 
-func (h *Holdem) GetPlayerState(playerID string) interface{} {
-	baseState := h.GetGameState().(map[string]interface{})
+func (h *Holdem) GetPlayerState(playerID string) GameView {
+	baseState := h.GetGameState()
 
 	// Find the player's hand
-	var playerHand []models.Card
+	// var playerHand []models.Card
 	for _, player := range h.game.Players {
-		if player.Player.ID == playerID {
-			playerHand = h.State.PlayerHands[player.Player.ID]
+		if player.Client.User.Player.ID == playerID {
+			// playerHand = h.State.Seats[player.Position].Hand
 			break
 		}
 	}
 
 	// Add player's hand to the state
-	baseState["hand"] = playerHand
+	// baseState.Players[playerID].Hand = playerHand
 
-	return baseState
+	return baseState.(GameView)
 }
 
 func (h *Holdem) LogGameState(message string) {
@@ -1498,37 +1568,42 @@ func (h *Holdem) LogGameState(message string) {
 
 	log.Printf("[PLAYERS] Status:")
 	for i, player := range h.game.Players {
-		status := "Active"
-		if h.State.PlayerHands[player.Player.ID] == nil {
-			status = "Folded"
-		} else if player.Balance == 0 {
-			status = "All-In"
-		}
-
-		position := ""
-		if i == h.State.DealerIndex {
-			position += "Dealer "
-		}
-		if i == h.State.SmallBlindIndex {
-			position += "SB "
-		}
-		if i == h.State.BigBlindIndex {
-			position += "BB "
-		}
-		if i == h.State.CurrentTurn {
-			position += "Acting "
-		}
-
-		playerBet := h.State.PlayerBets[player.Player.ID]
-
-		log.Printf("  - Player %s (%s):", player.Player.ID, position)
-		log.Printf("	- Balance: $%d | Bet: $%d | Status: %s ", player.Balance, playerBet, status)
-		log.Printf("	- Cards: %v", func() string {
-			if h.State.PlayerHands[player.Player.ID] == nil {
-				return "Folded"
+		seat, ok := h.State.Seats[player.Position]
+		if ok {
+			status := "Active"
+			if seat.Hand == nil {
+				status = "Folded"
+			} else if player.Balance == 0 {
+				status = "All-In"
 			}
-			return fmt.Sprintf("%v", h.State.PlayerHands[player.Player.ID])
-		}())
+
+			position := ""
+			if i == h.State.DealerSeat.Position {
+				position += "Dealer "
+			}
+			if i == h.State.SmallBlindSeat.Position {
+				position += "SB "
+			}
+			if i == h.State.BigBlindSeat.Position {
+				position += "BB "
+			}
+			if i == h.State.CurrentSeat.Position {
+				position += "Acting "
+			}
+
+			playerBet := h.State.PlayerBets[player.Client.User.Player.ID]
+
+			log.Printf("  - Player %s (%s):", player.Client.User.Player.ID, position)
+			log.Printf("	- Balance: $%d | Bet: $%d | Status: %s ", player.Balance, playerBet, status)
+			log.Printf("	- Cards: %v", func() string {
+				if seat.Hand == nil {
+					return "Folded"
+				}
+				return fmt.Sprintf("%v", seat.Hand)
+			}())
+		} else {
+			log.Printf("  - Player %s: (not in game)", player.Client.User.Player.ID)
+		}
 	}
 
 	activePlayers := h.PlayersNotFoldedCount()

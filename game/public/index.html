@@ -898,6 +898,31 @@
                     case 'game_info':
                         handleGameInfo(message.data);
                         break;
+                    // Holdem specific message types
+                    case 'gameStart':
+                        handleGameStart(message.data);
+                        break;
+                    case 'gameEnd':
+                        handleGameEnd(message.data);
+                        break;
+                    case 'roundStart':
+                        handleRoundStart(message.data);
+                        break;
+                    case 'roundEnd':
+                        handleRoundEnd(message.data);
+                        break;
+                    case 'playerTurn':
+                        handlePlayerTurn(message.data);
+                        break;
+                    case 'playerAction':
+                        handlePlayerAction(message.data);
+                        break;
+                    case 'showdown':
+                        handleShowdown(message.data);
+                        break;
+                    case 'winner':
+                        handleWinner(message.data);
+                        break;
                     case 'error':
                         handleError(message.data);
                         break;
@@ -1001,6 +1026,183 @@
         }
     }
 
+    // Handle game start message
+    function handleGameStart(data) {
+        logMessage('Game started!');
+
+        // Update game state if available
+        if (data.gameState) {
+            currentGameState = data;
+            renderGameState(data);
+        }
+
+        // Update debug panel
+        updateDebugPanel();
+    }
+
+    // Handle game end message
+    function handleGameEnd(data) {
+        logMessage('Game ended!');
+
+        // Update game state if available
+        if (data.gameState) {
+            currentGameState = data;
+            renderGameState(data);
+        }
+
+        // Update debug panel
+        updateDebugPanel();
+    }
+
+    // Handle round start message
+    function handleRoundStart(data) {
+        const roundName = data.gameState?.state?.CurrentRound || 'unknown';
+        logMessage(`Round started: ${roundName.toUpperCase()}`);
+
+        // Update game state
+        currentGameState = data;
+        renderGameState(data);
+
+        // Update debug panel
+        updateDebugPanel();
+    }
+
+    // Handle round end message
+    function handleRoundEnd(data) {
+        const roundName = data.gameState?.state?.CurrentRound || 'unknown';
+        logMessage(`Round ended: ${roundName.toUpperCase()}`);
+
+        // Update game state
+        currentGameState = data;
+        renderGameState(data);
+
+        // Update debug panel
+        updateDebugPanel();
+    }
+
+    // Handle player turn message
+    function handlePlayerTurn(data) {
+        // Extract player information
+        const gameState = data.gameState || {};
+        const statePlayers = gameState.state?.Players || [];
+        const currentPlayer = statePlayers.find(p => p.IsCurrentTurn);
+
+        if (currentPlayer) {
+            if (currentPlayer.ID === playerID) {
+                logMessage('Your turn to act');
+                enableActionButtons(gameState.state?.CurrentBet || 0);
+            } else {
+                logMessage(`${currentPlayer.Name}'s turn to act`);
+                disableActionButtons();
+            }
+        }
+
+        // Update game state
+        currentGameState = data;
+        renderGameState(data);
+
+        // Update debug panel
+        updateDebugPanel();
+    }
+
+    // Handle player action message
+    function handlePlayerAction(data) {
+        // Extract action information
+        const playerID = data.player_id;
+        const action = data.action;
+        const amount = data.amount;
+
+        // Find player name
+        let playerName = "Unknown player";
+        if (data.gameState && data.gameState.state && data.gameState.state.Players) {
+            const player = data.gameState.state.Players.find(p => p.ID === playerID);
+            if (player) {
+                playerName = player.Name;
+            }
+        }
+
+        // Log the action
+        if (amount > 0) {
+            logMessage(`${playerName} ${action}s $${amount}`);
+        } else {
+            logMessage(`${playerName} ${action}s`);
+        }
+
+        // Update game state
+        currentGameState = data;
+        renderGameState(data);
+
+        // Update debug panel
+        updateDebugPanel();
+    }
+
+    // Handle showdown message
+    function handleShowdown(data) {
+        logMessage('Showdown!');
+
+        // Extract winners information
+        const winners = data.winners || [];
+        const pot = data.pot || 0;
+
+        // Log winners
+        winners.forEach(winner => {
+            // Find player name
+            let playerName = "Unknown player";
+            if (data.gameState && data.gameState.state && data.gameState.state.Players) {
+                const player = data.gameState.state.Players.find(p => p.ID === winner.PlayerID);
+                if (player) {
+                    playerName = player.Name;
+                }
+            }
+
+            // Get hand rank name
+            const handRankNames = [
+                "High Card", "One Pair", "Two Pair", "Three of a Kind",
+                "Straight", "Flush", "Full House", "Four of a Kind",
+                "Straight Flush", "Royal Flush"
+            ];
+            const handRank = handRankNames[winner.Rank] || "Unknown hand";
+
+            logMessage(`${playerName} wins with ${handRank}`);
+        });
+
+        // Update game state
+        currentGameState = data;
+        renderGameState(data);
+
+        // Update debug panel
+        updateDebugPanel();
+    }
+
+    // Handle winner message
+    function handleWinner(data) {
+        // Extract winner information
+        const winnerID = data.winner_id;
+        const amount = data.amount || 0;
+        const reason = data.reason || "";
+
+        // Find winner name
+        let winnerName = "Unknown player";
+        if (data.gameState && data.gameState.state && data.gameState.state.Players) {
+            const winner = data.gameState.state.Players.find(p => p.ID === winnerID);
+            if (winner) {
+                winnerName = winner.Name;
+            }
+        }
+
+        // Log winner
+        logMessage(`${winnerName} wins $${amount}${reason ? ` (${reason})` : ''}`);
+
+        // Update game state if available
+        if (data.gameState) {
+            currentGameState = data;
+            renderGameState(data);
+        }
+
+        // Update debug panel
+        updateDebugPanel();
+    }
+
     // Handle error messages
     function handleError(data) {
         logMessage(`Error: ${data.error}`);
@@ -1078,40 +1280,80 @@
         }
 
         // Check if it's our turn
+        let isOurTurn = false;
         const gameState = currentGameState.gameState || {};
-        const statePlayers = gameState.state?.Players || [];
-        const ourPlayer = statePlayers.find(p => p.ID === playerID);
 
-        if (!ourPlayer || !ourPlayer.IsCurrentTurn) {
+        // Check in direct structure
+        if (gameState.Players && Array.isArray(gameState.Players)) {
+            const ourPlayer = gameState.Players.find(p => p.ID === playerID);
+            isOurTurn = ourPlayer && ourPlayer.IsCurrentTurn;
+        }
+        // Check in nested structure
+        else if (gameState.state && gameState.state.Players) {
+            const ourPlayer = gameState.state.Players.find(p => p.ID === playerID);
+            isOurTurn = ourPlayer && ourPlayer.IsCurrentTurn;
+        }
+
+        if (!isOurTurn) {
             logMessage('Not your turn');
             return;
         }
 
+        // Format the action data according to HoldemAction struct
         const actionData = {
             playerId: playerID,
-            roomId: roomID,
             action: action,
-            data: {
-                amount: amount,
-                action: action,
-                playerId: playerID
-            }
+            amount: amount
         };
 
+        // Send the action to the server
         sendMessage('game_action', actionData, roomID, playerID);
-        logMessage(`Sending action: ${action}${amount > 0 ? ' ' + amount : ''}`);
+
+        // Log the action
+        if (amount > 0) {
+            logMessage(`You ${action} $${amount}`);
+        } else {
+            logMessage(`You ${action}`);
+        }
+
+        // Disable action buttons after sending action
+        disableActionButtons();
     }
 
     // Enable action buttons based on game state
     function enableActionButtons(currentBet) {
-        const gameState = currentGameState.gameState || {};
-        const statePlayers = gameState.state?.Players || [];
-        const ourPlayer = statePlayers.find(p => p.ID === playerID);
+        // Get the current game state
+        const gameState = currentGameState?.gameState || {};
 
-        if (!ourPlayer) return;
+        // Find our player in the game state
+        let ourPlayer = null;
+
+        // Check in direct structure
+        if (gameState.Players && Array.isArray(gameState.Players)) {
+            ourPlayer = gameState.Players.find(p => p.ID === playerID);
+        }
+        // Check in nested structure
+        else if (gameState.state && gameState.state.Players) {
+            ourPlayer = gameState.state.Players.find(p => p.ID === playerID);
+        }
+
+        if (!ourPlayer) {
+            console.log('Player not found in game state');
+            return;
+        }
 
         // Get the player's current bet from the game state
-        const playerBet = ourPlayer.CurrentBet || 0;
+        let playerBet = 0;
+
+        // Try to get player bet from different sources
+        if (gameState.PlayerBets && gameState.PlayerBets[playerID] !== undefined) {
+            playerBet = gameState.PlayerBets[playerID];
+        } else if (gameState.state && gameState.state.PlayerBets && gameState.state.PlayerBets[playerID] !== undefined) {
+            playerBet = gameState.state.PlayerBets[playerID];
+        } else if (ourPlayer.CurrentBet !== undefined) {
+            playerBet = ourPlayer.CurrentBet;
+        }
+
         const toCall = currentBet - playerBet;
 
         console.log(`Current bet: ${currentBet}, Player bet: ${playerBet}, To call: ${toCall}`);
@@ -1119,17 +1361,18 @@
         // Enable/disable buttons based on valid actions
         document.querySelector('.action-btn.fold').disabled = false;
 
-        // Always enable check button
-        document.querySelector('.action-btn.check').disabled = false;
+        // Check button is only enabled if player can check (no need to call)
+        document.querySelector('.action-btn.check').disabled = toCall > 0;
 
+        // Call button is only enabled if there's something to call
         if (toCall === 0) {
             document.querySelector('.action-btn.call').disabled = true;
-            logMessage('You can check');
         } else {
             document.querySelector('.action-btn.call').disabled = false;
             document.querySelector('.action-btn.call').textContent = `Call $${toCall}`;
         }
 
+        // Enable raise and all-in buttons
         document.querySelector('.action-btn.raise').disabled = false;
         document.querySelector('.action-btn.all-in').disabled = false;
 
@@ -1230,7 +1473,7 @@
     function renderPlayers(players) {
         playersEl.innerHTML = '';
 
-        players.forEach((player, index) => {
+        players.forEach((player) => {
             const playerEl = document.createElement('div');
             playerEl.className = 'player';
 
@@ -1254,35 +1497,59 @@
             if (player.HasCards && !player.Folded) {
                 // If this is the current player, show their cards
                 if (player.ID === playerID) {
-                    // Check if we have the actual card data
+                    // Try to get cards from different possible sources
+                    let playerCards = null;
+
+                    // 1. Check if cards are directly in the player object
                     if (player.Cards && player.Cards.length === 2) {
-                        cardsEl.appendChild(createCardElement(player.Cards[0]));
-                        cardsEl.appendChild(createCardElement(player.Cards[1]));
-                    } else if (player.Hand && player.Hand.length === 2) {
-                        cardsEl.appendChild(createCardElement(player.Hand[0]));
-                        cardsEl.appendChild(createCardElement(player.Hand[1]));
-                    } else if (currentGameState && currentGameState.gameState &&
-                        currentGameState.gameState.playerCards &&
-                        currentGameState.gameState.playerCards[player.ID]) {
-                        // Try to get cards from game state
-                        const cards = currentGameState.gameState.playerCards[player.ID];
-                        cardsEl.appendChild(createCardElement(cards[0]));
-                        cardsEl.appendChild(createCardElement(cards[1]));
+                        playerCards = player.Cards;
+                    }
+                    // 2. Check if cards are in the Hand property
+                    else if (player.Hand && player.Hand.length === 2) {
+                        playerCards = player.Hand;
+                    }
+                    // 3. Check if cards are stored in the game state
+                    else if (currentGameState && currentGameState.gameState) {
+                        // Check in playerCards cache
+                        if (currentGameState.gameState.playerCards &&
+                            currentGameState.gameState.playerCards[player.ID]) {
+                            playerCards = currentGameState.gameState.playerCards[player.ID];
+                        }
+                        // Check in player state
+                        else if (currentGameState.playerState &&
+                            currentGameState.playerState[player.ID] &&
+                            currentGameState.playerState[player.ID].Hand) {
+                            playerCards = currentGameState.playerState[player.ID].Hand;
+                        }
+                    }
+
+                    if (playerCards) {
+                        cardsEl.appendChild(createCardElement(playerCards[0]));
+                        cardsEl.appendChild(createCardElement(playerCards[1]));
                     } else {
                         // Fallback to face down if we don't have the card data yet
                         cardsEl.appendChild(createCardElement({}, true));
                         cardsEl.appendChild(createCardElement({}, true));
-
-                        // Log that we're missing card data
-                        console.log('Missing card data for current player', player);
                     }
                 } else {
-                    // For other players, always show face down cards
-                    cardsEl.appendChild(createCardElement({}, true));
-                    cardsEl.appendChild(createCardElement({}, true));
+                    // For other players, show face down cards unless it's showdown
+                    const isShowdown = currentGameState &&
+                        ((currentGameState.gameState && currentGameState.gameState.CurrentRound === 'showdown') ||
+                            (currentGameState.gameState && currentGameState.gameState.state &&
+                                currentGameState.gameState.state.CurrentRound === 'showdown'));
+
+                    if (isShowdown && player.Cards && player.Cards.length === 2) {
+                        // Show cards during showdown
+                        cardsEl.appendChild(createCardElement(player.Cards[0]));
+                        cardsEl.appendChild(createCardElement(player.Cards[1]));
+                    } else {
+                        // Face down cards
+                        cardsEl.appendChild(createCardElement({}, true));
+                        cardsEl.appendChild(createCardElement({}, true));
+                    }
                 }
             } else if (player.showCards && player.Cards && player.Cards.length === 2) {
-                // Show cards during showdown if available
+                // Show cards if explicitly marked to show
                 cardsEl.appendChild(createCardElement(player.Cards[0]));
                 cardsEl.appendChild(createCardElement(player.Cards[1]));
             }
@@ -1327,26 +1594,54 @@
 
     // Render game state
     function renderGameState(state) {
+        // Extract game state from the message
         const gameState = state.gameState || {};
-        const statePlayers = gameState.state?.Players || [];
+
+        // Handle different state structures
+        let players = [];
+        let communityCards = [];
+        let pot = 0;
+        let currentBet = 0;
+        let currentRound = 'preflop';
+
+        // Check if we have the state in the expected format from GetGameState()
+        if (gameState.Players && Array.isArray(gameState.Players)) {
+            // Direct structure from GetGameState()
+            players = gameState.Players;
+            communityCards = gameState.CommunityCards || [];
+            pot = gameState.Pot || 0;
+            currentBet = gameState.CurrentBet || 0;
+            currentRound = gameState.CurrentRound || 'preflop';
+        }
+        // Check if we have the nested state structure
+        else if (gameState.state) {
+            // Nested structure
+            players = gameState.state.Players || [];
+            communityCards = gameState.state.CommunityCards || [];
+            pot = gameState.state.Pot || 0;
+            currentBet = gameState.state.CurrentBet || 0;
+            currentRound = gameState.state.CurrentRound || 'preflop';
+        }
 
         // Render community cards
-        const communityCards = gameState.state?.CommunityCards || [];
-        const currentRound = gameState.state?.CurrentRound || 'preflop';
         renderCommunityCards(communityCards, currentRound);
 
         // Render players
-        renderPlayers(statePlayers);
+        renderPlayers(players);
 
         // Update pot
-        updatePot(gameState.state?.Pot || 0);
+        updatePot(pot);
 
         // Update call button text
         const callBtn = document.querySelector('.action-btn.call');
-        callBtn.textContent = `Call $${gameState.state?.CurrentBet || 0}`;
+        callBtn.textContent = `Call $${currentBet}`;
 
-        // Log round
-        logMessage(`Current round: ${(currentRound || 'preflop').toUpperCase()}`);
+        // Log round if it changed
+        if (currentGameState && currentGameState.gameState &&
+            ((currentGameState.gameState.CurrentRound && currentGameState.gameState.CurrentRound !== currentRound) ||
+                (currentGameState.gameState.state && currentGameState.gameState.state.CurrentRound !== currentRound))) {
+            logMessage(`Current round: ${currentRound.toUpperCase()}`);
+        }
     }
 
     // Load demo state
@@ -1391,25 +1686,23 @@
     // Sample game state for demo
     const demoGameState = {
         gameState: {
-            state: {
-                Players: [
-                    { ID: 'player1', Name: 'You', Balance: 980, HasCards: true, Folded: false, IsDealer: false, IsSmallBlind: true, IsBigBlind: false, IsCurrentTurn: true, Cards: [{ value: 'A', suit: 'hearts' }, { value: 'K', suit: 'hearts' }] },
-                    { ID: 'player2', Name: 'Player 2', Balance: 1200, HasCards: true, Folded: false, IsDealer: true, IsSmallBlind: false, IsBigBlind: false, IsCurrentTurn: false },
-                    { ID: 'player3', Name: 'Player 3', Balance: 750, HasCards: true, Folded: false, IsDealer: false, IsSmallBlind: false, IsBigBlind: true, IsCurrentTurn: false },
-                    { ID: 'player4', Name: 'Player 4', Balance: 1500, HasCards: true, Folded: false, IsDealer: false, IsSmallBlind: false, IsBigBlind: false, IsCurrentTurn: false },
-                    { ID: 'player5', Name: 'Player 5', Balance: 800, HasCards: true, Folded: false, IsDealer: false, IsSmallBlind: false, IsBigBlind: false, IsCurrentTurn: false },
-                ],
-                CommunityCards: [
-                    { value: '10', suit: 'spades' },
-                    { value: 'J', suit: 'diamonds' },
-                    { value: 'Q', suit: 'clubs' },
-                    { value: '2', suit: 'hearts' },
-                    { value: '7', suit: 'spades' }
-                ],
-                Pot: 120,
-                CurrentBet: 20,
-                CurrentRound: 'river'
-            },
+            Players: [
+                { ID: 'player1', Name: 'You', Balance: 980, HasCards: true, Folded: false, IsDealer: false, IsSmallBlind: true, IsBigBlind: false, IsCurrentTurn: true, Cards: [{ value: 'A', suit: 'hearts' }, { value: 'K', suit: 'hearts' }] },
+                { ID: 'player2', Name: 'Player 2', Balance: 1200, HasCards: true, Folded: false, IsDealer: true, IsSmallBlind: false, IsBigBlind: false, IsCurrentTurn: false },
+                { ID: 'player3', Name: 'Player 3', Balance: 750, HasCards: true, Folded: false, IsDealer: false, IsSmallBlind: false, IsBigBlind: true, IsCurrentTurn: false },
+                { ID: 'player4', Name: 'Player 4', Balance: 1500, HasCards: true, Folded: false, IsDealer: false, IsSmallBlind: false, IsBigBlind: false, IsCurrentTurn: false },
+                { ID: 'player5', Name: 'Player 5', Balance: 800, HasCards: true, Folded: false, IsDealer: false, IsSmallBlind: false, IsBigBlind: false, IsCurrentTurn: false },
+            ],
+            CommunityCards: [
+                { value: '10', suit: 'spades' },
+                { value: 'J', suit: 'diamonds' },
+                { value: 'Q', suit: 'clubs' },
+                { value: '2', suit: 'hearts' },
+                { value: '7', suit: 'spades' }
+            ],
+            Pot: 120,
+            CurrentBet: 20,
+            CurrentRound: 'river',
             playerCards: {}
         },
         data: {

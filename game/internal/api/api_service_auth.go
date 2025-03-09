@@ -18,7 +18,7 @@ type AuthService struct {
 func NewAuthService(parent *ApiService, endpoint string) *AuthService {
 	service := &AuthService{
 		parent:   parent,
-		endpoint: endpoint,
+		endpoint: parent.config.BaseURL + endpoint,
 	}
 	service.client = parent.getClient("auth-service", endpoint)
 

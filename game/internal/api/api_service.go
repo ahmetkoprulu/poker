@@ -27,7 +27,7 @@ func NewApiService() *ApiService {
 		config:        apiConfig,
 		clientFactory: factory,
 	}
-	service.AuthService = NewAuthService(service, "auth")
+	service.AuthService = NewAuthService(service, "/auth")
 
 	return service
 }

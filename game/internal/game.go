@@ -72,6 +72,8 @@ type GameAction struct {
 
 type GameMessage struct {
 	PlayerID    string          `json:"player_id"`
+	ToGame      bool            `json:"to_game"`
+	ToRoom      bool            `json:"to_room"`
 	MessageType GameMessageType `json:"message_type"`
 	Data        interface{}     `json:"data"`
 }
@@ -96,7 +98,7 @@ type GamePlayer struct {
 	Position   int              `json:"position"`
 	Balance    int              `json:"balance"`
 	LastAction string           `json:"last_action"`
-	Player     Player           `json:"player"`
+	Client     *Client          `json:"client"`
 	Status     GamePlayerStatus `json:"status"`
 	Data       IGamePlayer      `json:"data"`
 }
@@ -137,14 +139,14 @@ func NewGame(actionChan chan GameAction, messageChan chan GameMessage, room *Roo
 	}
 }
 
-func (g *Game) AddPlayer(position int, player *Player) error {
+func (g *Game) AddPlayer(position int, player *Client) error {
 	g.Mu.Lock()
 	defer g.Mu.Unlock()
 
 	gamePlayer := &GamePlayer{
 		Position: position,
-		Player:   *player,
-		Balance:  player.Chips,
+		Client:   player,
+		Balance:  int(player.User.Player.Chips),
 	}
 
 	if len(g.Players) >= g.MaxPlayers {
@@ -152,7 +154,7 @@ func (g *Game) AddPlayer(position int, player *Player) error {
 	}
 
 	for _, p := range g.Players {
-		if p.Player.ID == player.ID {
+		if p.Client.User.Player.ID == player.User.Player.ID {
 			return ErrorGamePlayerAlreadyIn
 		}
 
@@ -170,7 +172,7 @@ func (g *Game) AddPlayer(position int, player *Player) error {
 
 func (g *Game) RemovePlayer(playerID string) error {
 	for i, p := range g.Players {
-		if p.Player.ID == playerID {
+		if p.Client.User.Player.ID == playerID {
 			g.Players = slices.Delete(g.Players, i, i+1)
 			g.Playable.OnPlayerLeave(p)
 			return nil

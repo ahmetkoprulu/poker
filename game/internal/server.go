@@ -148,9 +148,8 @@ func (s *Server) JoinRoom(roomID string, client *Client) error {
 		return err
 	}
 
-	room.Players = append(room.Players, client)
+	room.AddPlayer(client)
 
-	s.roomManager.RegisterRoom(room)
 	return nil
 }
 
@@ -197,9 +196,8 @@ func (s *Server) BroadcastToGame(roomID string, message []byte) {
 	}
 	game := room.Game
 
-	for _, player := range game.Players {
-		// TODO: Add game ID to client struct and check if client is in the game
-		if client, ok := s.clients[player.Player.ID]; ok {
+	for _, gamePlayer := range game.Players {
+		if client, ok := s.clients[gamePlayer.Client.User.Player.ID]; ok {
 			client.send <- message
 		}
 	}

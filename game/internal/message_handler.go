@@ -139,19 +139,12 @@ func (h *MessageHandler) handleJoinGame(client *Client, msg models.MessageJoinGa
 	// Ensure there's a game to join
 	// room.EnsureGameExists()
 
-	player := Player{
-		ID:       client.User.Player.ID,
-		Username: "Guest",
-		Picture:  "https://via.placeholder.com/150",
-		Chips:    1000,
-	}
-
 	if err := h.roomManager.JoinRoom(room.ID, client); err != nil {
 		log.Printf("[ERROR] Failed to join room - RoomID: %s, PlayerID: %s, Error: %v", room.ID, client.User.Player.ID, err)
 		return h.sendError(client, fmt.Sprintf("Failed to join game: %v", err))
 	}
 
-	if err := room.Game.AddPlayer(msg.Position, &player); err != nil {
+	if err := room.Game.AddPlayer(msg.Position, client); err != nil {
 		log.Printf("[ERROR] Failed to add player to game - RoomID: %s, PlayerID: %s, Error: %v", room.ID, client.User.Player.ID, err)
 		return h.sendError(client, fmt.Sprintf("Failed to join game: %v", err))
 	}
@@ -215,7 +208,7 @@ func (h *MessageHandler) handleGameAction(client *Client, msg models.MessageGame
 
 	var currentPlayer *GamePlayer
 	for _, p := range game.Players {
-		if p.Player.ID == client.User.Player.ID {
+		if p.Client.User.Player.ID == client.User.Player.ID {
 			currentPlayer = p
 			break
 		}
