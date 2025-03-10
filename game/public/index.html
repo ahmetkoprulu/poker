@@ -1084,15 +1084,33 @@
     function handlePlayerTurn(data) {
         // Extract player information
         const gameState = data.gameState || {};
-        const statePlayers = gameState.state?.Players || [];
-        const currentPlayer = statePlayers.find(p => p.IsCurrentTurn);
+        let currentPlayer = null;
+
+        // Check in different possible structures
+        if (gameState.Players && Array.isArray(gameState.Players)) {
+            currentPlayer = gameState.Players.find(p => p.IsCurrentTurn || p.is_current_turn);
+        } else if (gameState.players && Array.isArray(gameState.players)) {
+            currentPlayer = gameState.players.find(p => p.is_current_turn || p.IsCurrentTurn);
+        } else if (gameState.state) {
+            if (gameState.state.Players && Array.isArray(gameState.state.Players)) {
+                currentPlayer = gameState.state.Players.find(p => p.IsCurrentTurn || p.is_current_turn);
+            } else if (gameState.state.players && Array.isArray(gameState.state.players)) {
+                currentPlayer = gameState.state.players.find(p => p.is_current_turn || p.IsCurrentTurn);
+            }
+        }
 
         if (currentPlayer) {
-            if (currentPlayer.ID === playerID) {
+            const playerId = currentPlayer.id || currentPlayer.ID;
+            const playerName = currentPlayer.name || currentPlayer.Name;
+
+            if (playerId === playerID) {
                 logMessage('Your turn to act');
-                enableActionButtons(gameState.state?.CurrentBet || 0);
+                // Get current bet from appropriate property
+                const currentBet = gameState.current_bet || gameState.CurrentBet ||
+                    (gameState.state && (gameState.state.current_bet || gameState.state.CurrentBet)) || 0;
+                enableActionButtons(currentBet);
             } else {
-                logMessage(`${currentPlayer.Name}'s turn to act`);
+                logMessage(`${playerName}'s turn to act`);
                 disableActionButtons();
             }
         }
@@ -1108,16 +1126,39 @@
     // Handle player action message
     function handlePlayerAction(data) {
         // Extract action information
-        const playerID = data.player_id;
+        const playerID = data.player_id || data.playerId;
         const action = data.action;
         const amount = data.amount;
 
         // Find player name
         let playerName = "Unknown player";
-        if (data.gameState && data.gameState.state && data.gameState.state.Players) {
-            const player = data.gameState.state.Players.find(p => p.ID === playerID);
-            if (player) {
-                playerName = player.Name;
+
+        // Check in different possible structures
+        if (data.gameState) {
+            const gameState = data.gameState;
+
+            if (gameState.Players && Array.isArray(gameState.Players)) {
+                const player = gameState.Players.find(p => (p.ID === playerID || p.id === playerID));
+                if (player) {
+                    playerName = player.Name || player.name;
+                }
+            } else if (gameState.players && Array.isArray(gameState.players)) {
+                const player = gameState.players.find(p => (p.id === playerID || p.ID === playerID));
+                if (player) {
+                    playerName = player.name || player.Name;
+                }
+            } else if (gameState.state) {
+                if (gameState.state.Players && Array.isArray(gameState.state.Players)) {
+                    const player = gameState.state.Players.find(p => (p.ID === playerID || p.id === playerID));
+                    if (player) {
+                        playerName = player.Name || player.name;
+                    }
+                } else if (gameState.state.players && Array.isArray(gameState.state.players)) {
+                    const player = gameState.state.players.find(p => (p.id === playerID || p.ID === playerID));
+                    if (player) {
+                        playerName = player.name || player.Name;
+                    }
+                }
             }
         }
 
@@ -1148,10 +1189,34 @@
         winners.forEach(winner => {
             // Find player name
             let playerName = "Unknown player";
-            if (data.gameState && data.gameState.state && data.gameState.state.Players) {
-                const player = data.gameState.state.Players.find(p => p.ID === winner.PlayerID);
-                if (player) {
-                    playerName = player.Name;
+            const winnerID = winner.PlayerID || winner.player_id;
+
+            // Check in different possible structures
+            if (data.gameState) {
+                const gameState = data.gameState;
+
+                if (gameState.Players && Array.isArray(gameState.Players)) {
+                    const player = gameState.Players.find(p => (p.ID === winnerID || p.id === winnerID));
+                    if (player) {
+                        playerName = player.Name || player.name;
+                    }
+                } else if (gameState.players && Array.isArray(gameState.players)) {
+                    const player = gameState.players.find(p => (p.id === winnerID || p.ID === winnerID));
+                    if (player) {
+                        playerName = player.name || player.Name;
+                    }
+                } else if (gameState.state) {
+                    if (gameState.state.Players && Array.isArray(gameState.state.Players)) {
+                        const player = gameState.state.Players.find(p => (p.ID === winnerID || p.id === winnerID));
+                        if (player) {
+                            playerName = player.Name || player.name;
+                        }
+                    } else if (gameState.state.players && Array.isArray(gameState.state.players)) {
+                        const player = gameState.state.players.find(p => (p.id === winnerID || p.ID === winnerID));
+                        if (player) {
+                            playerName = player.name || player.Name;
+                        }
+                    }
                 }
             }
 
@@ -1161,7 +1226,7 @@
                 "Straight", "Flush", "Full House", "Four of a Kind",
                 "Straight Flush", "Royal Flush"
             ];
-            const handRank = handRankNames[winner.Rank] || "Unknown hand";
+            const handRank = handRankNames[winner.Rank || winner.rank] || "Unknown hand";
 
             logMessage(`${playerName} wins with ${handRank}`);
         });
@@ -1177,21 +1242,44 @@
     // Handle winner message
     function handleWinner(data) {
         // Extract winner information
-        const winnerID = data.winner_id;
+        const winnerID = data.winner_id || data.winnerId;
         const amount = data.amount || 0;
         const reason = data.reason || "";
 
         // Find winner name
-        let winnerName = "Unknown player";
-        if (data.gameState && data.gameState.state && data.gameState.state.Players) {
-            const winner = data.gameState.state.Players.find(p => p.ID === winnerID);
-            if (winner) {
-                winnerName = winner.Name;
+        let playerName = "Unknown player";
+
+        // Check in different possible structures
+        if (data.gameState) {
+            const gameState = data.gameState;
+
+            if (gameState.Players && Array.isArray(gameState.Players)) {
+                const player = gameState.Players.find(p => (p.ID === winnerID || p.id === winnerID));
+                if (player) {
+                    playerName = player.Name || player.name;
+                }
+            } else if (gameState.players && Array.isArray(gameState.players)) {
+                const player = gameState.players.find(p => (p.id === winnerID || p.ID === winnerID));
+                if (player) {
+                    playerName = player.name || player.Name;
+                }
+            } else if (gameState.state) {
+                if (gameState.state.Players && Array.isArray(gameState.state.Players)) {
+                    const player = gameState.state.Players.find(p => (p.ID === winnerID || p.id === winnerID));
+                    if (player) {
+                        playerName = player.Name || player.name;
+                    }
+                } else if (gameState.state.players && Array.isArray(gameState.state.players)) {
+                    const player = gameState.state.players.find(p => (p.id === winnerID || p.ID === winnerID));
+                    if (player) {
+                        playerName = player.name || player.Name;
+                    }
+                }
             }
         }
 
         // Log winner
-        logMessage(`${winnerName} wins $${amount}${reason ? ` (${reason})` : ''}`);
+        logMessage(`${playerName} wins $${amount}${reason ? ` (${reason})` : ''}`);
 
         // Update game state if available
         if (data.gameState) {
@@ -1328,13 +1416,17 @@
         // Find our player in the game state
         let ourPlayer = null;
 
-        // Check in direct structure
+        // Check in different possible structures
         if (gameState.Players && Array.isArray(gameState.Players)) {
-            ourPlayer = gameState.Players.find(p => p.ID === playerID);
-        }
-        // Check in nested structure
-        else if (gameState.state && gameState.state.Players) {
-            ourPlayer = gameState.state.Players.find(p => p.ID === playerID);
+            ourPlayer = gameState.Players.find(p => p.ID === playerID || p.id === playerID);
+        } else if (gameState.players && Array.isArray(gameState.players)) {
+            ourPlayer = gameState.players.find(p => p.id === playerID || p.ID === playerID);
+        } else if (gameState.state) {
+            if (gameState.state.Players && Array.isArray(gameState.state.Players)) {
+                ourPlayer = gameState.state.Players.find(p => p.ID === playerID || p.id === playerID);
+            } else if (gameState.state.players && Array.isArray(gameState.state.players)) {
+                ourPlayer = gameState.state.players.find(p => p.id === playerID || p.ID === playerID);
+            }
         }
 
         if (!ourPlayer) {
@@ -1348,10 +1440,18 @@
         // Try to get player bet from different sources
         if (gameState.PlayerBets && gameState.PlayerBets[playerID] !== undefined) {
             playerBet = gameState.PlayerBets[playerID];
-        } else if (gameState.state && gameState.state.PlayerBets && gameState.state.PlayerBets[playerID] !== undefined) {
-            playerBet = gameState.state.PlayerBets[playerID];
+        } else if (gameState.player_bets && gameState.player_bets[playerID] !== undefined) {
+            playerBet = gameState.player_bets[playerID];
+        } else if (gameState.state) {
+            if (gameState.state.PlayerBets && gameState.state.PlayerBets[playerID] !== undefined) {
+                playerBet = gameState.state.PlayerBets[playerID];
+            } else if (gameState.state.player_bets && gameState.state.player_bets[playerID] !== undefined) {
+                playerBet = gameState.state.player_bets[playerID];
+            }
         } else if (ourPlayer.CurrentBet !== undefined) {
             playerBet = ourPlayer.CurrentBet;
+        } else if (ourPlayer.current_bet !== undefined) {
+            playerBet = ourPlayer.current_bet;
         }
 
         const toCall = currentBet - playerBet;
@@ -1478,48 +1578,60 @@
             playerEl.className = 'player';
 
             // Add a class if this is the current player
-            if (player.ID === playerID) {
+            // Support both backend (id) and frontend (ID) property names
+            const playerId = player.id || player.ID;
+            if (playerId === playerID) {
                 playerEl.classList.add('current-player');
             }
 
             const nameEl = document.createElement('div');
             nameEl.className = 'player-name';
-            nameEl.textContent = player.Name;
+            // Support both backend (name) and frontend (Name) property names
+            nameEl.textContent = player.name || player.Name;
 
             const balanceEl = document.createElement('div');
             balanceEl.className = 'player-balance';
-            balanceEl.textContent = `$${player.Balance}`;
+            // Support both backend (balance) and frontend (Balance) property names
+            balanceEl.textContent = `$${player.balance || player.Balance}`;
 
             const cardsEl = document.createElement('div');
             cardsEl.className = 'player-cards';
 
             // Check if player has cards and hasn't folded
-            if (player.HasCards && !player.Folded) {
+            // Support both backend (is_folded) and frontend (Folded) property names
+            const hasCards = player.hand?.length > 0 || player.Hand?.length > 0 || player.Cards?.length > 0 || player.HasCards;
+            const isFolded = player.is_folded || player.Folded;
+
+            if (hasCards && !isFolded) {
                 // If this is the current player, show their cards
-                if (player.ID === playerID) {
+                if (playerId === playerID) {
                     // Try to get cards from different possible sources
                     let playerCards = null;
 
-                    // 1. Check if cards are directly in the player object
-                    if (player.Cards && player.Cards.length === 2) {
-                        playerCards = player.Cards;
+                    // 1. Check if cards are in the hand property (backend)
+                    if (player.hand && player.hand.length === 2) {
+                        playerCards = player.hand;
                     }
-                    // 2. Check if cards are in the Hand property
+                    // 2. Check if cards are in the Hand property (frontend)
                     else if (player.Hand && player.Hand.length === 2) {
                         playerCards = player.Hand;
                     }
-                    // 3. Check if cards are stored in the game state
+                    // 3. Check if cards are in the Cards property (frontend)
+                    else if (player.Cards && player.Cards.length === 2) {
+                        playerCards = player.Cards;
+                    }
+                    // 4. Check if cards are stored in the game state
                     else if (currentGameState && currentGameState.gameState) {
                         // Check in playerCards cache
                         if (currentGameState.gameState.playerCards &&
-                            currentGameState.gameState.playerCards[player.ID]) {
-                            playerCards = currentGameState.gameState.playerCards[player.ID];
+                            currentGameState.gameState.playerCards[playerId]) {
+                            playerCards = currentGameState.gameState.playerCards[playerId];
                         }
                         // Check in player state
                         else if (currentGameState.playerState &&
-                            currentGameState.playerState[player.ID] &&
-                            currentGameState.playerState[player.ID].Hand) {
-                            playerCards = currentGameState.playerState[player.ID].Hand;
+                            currentGameState.playerState[playerId] &&
+                            currentGameState.playerState[playerId].Hand) {
+                            playerCards = currentGameState.playerState[playerId].Hand;
                         }
                     }
 
@@ -1536,45 +1648,55 @@
                     const isShowdown = currentGameState &&
                         ((currentGameState.gameState && currentGameState.gameState.CurrentRound === 'showdown') ||
                             (currentGameState.gameState && currentGameState.gameState.state &&
-                                currentGameState.gameState.state.CurrentRound === 'showdown'));
+                                currentGameState.gameState.state.CurrentRound === 'showdown') ||
+                            (currentGameState.gameState && currentGameState.gameState.current_round === 'showdown'));
 
-                    if (isShowdown && player.Cards && player.Cards.length === 2) {
+                    // Get cards from appropriate property
+                    const playerCards = player.hand || player.Hand || player.Cards;
+
+                    if (isShowdown && playerCards && playerCards.length === 2) {
                         // Show cards during showdown
-                        cardsEl.appendChild(createCardElement(player.Cards[0]));
-                        cardsEl.appendChild(createCardElement(player.Cards[1]));
+                        cardsEl.appendChild(createCardElement(playerCards[0]));
+                        cardsEl.appendChild(createCardElement(playerCards[1]));
                     } else {
                         // Face down cards
                         cardsEl.appendChild(createCardElement({}, true));
                         cardsEl.appendChild(createCardElement({}, true));
                     }
                 }
-            } else if (player.showCards && player.Cards && player.Cards.length === 2) {
+            } else if ((player.showCards || player.show_cards) &&
+                (player.Cards?.length === 2 || player.Hand?.length === 2 || player.hand?.length === 2)) {
                 // Show cards if explicitly marked to show
-                cardsEl.appendChild(createCardElement(player.Cards[0]));
-                cardsEl.appendChild(createCardElement(player.Cards[1]));
+                const cards = player.hand || player.Hand || player.Cards;
+                cardsEl.appendChild(createCardElement(cards[0]));
+                cardsEl.appendChild(createCardElement(cards[1]));
             }
 
             const statusEl = document.createElement('div');
             statusEl.className = 'player-status';
 
-            if (player.Folded) {
+            // Support both backend and frontend property names
+            if (player.is_folded || player.Folded) {
                 statusEl.textContent = 'Folded';
-            } else if (player.IsCurrentTurn) {
+            } else if (player.is_all_in || player.IsAllIn) {
+                statusEl.textContent = 'All In';
+            } else if (player.is_current_turn || player.IsCurrentTurn) {
                 statusEl.textContent = 'Acting';
                 statusEl.classList.add('active');
             } else {
                 statusEl.textContent = 'Waiting';
             }
 
-            if (player.IsDealer) {
+            // Support both backend and frontend property names for special positions
+            if (player.is_dealer || player.IsDealer) {
                 statusEl.classList.add('dealer');
             }
 
-            if (player.IsSmallBlind) {
+            if (player.is_small_blind || player.IsSmallBlind) {
                 statusEl.classList.add('sb');
             }
 
-            if (player.IsBigBlind) {
+            if (player.is_big_blind || player.IsBigBlind) {
                 statusEl.classList.add('bb');
             }
 
@@ -1606,21 +1728,40 @@
 
         // Check if we have the state in the expected format from GetGameState()
         if (gameState.Players && Array.isArray(gameState.Players)) {
-            // Direct structure from GetGameState()
+            // Direct structure from GetGameState() - frontend format
             players = gameState.Players;
             communityCards = gameState.CommunityCards || [];
             pot = gameState.Pot || 0;
             currentBet = gameState.CurrentBet || 0;
             currentRound = gameState.CurrentRound || 'preflop';
         }
+        // Check if we have the backend format (lowercase property names)
+        else if (gameState.players && Array.isArray(gameState.players)) {
+            // Backend structure
+            players = gameState.players;
+            communityCards = gameState.community_cards || [];
+            pot = gameState.pot || 0;
+            currentBet = gameState.current_bet || 0;
+            currentRound = gameState.current_round || 'preflop';
+        }
         // Check if we have the nested state structure
         else if (gameState.state) {
-            // Nested structure
-            players = gameState.state.Players || [];
-            communityCards = gameState.state.CommunityCards || [];
-            pot = gameState.state.Pot || 0;
-            currentBet = gameState.state.CurrentBet || 0;
-            currentRound = gameState.state.CurrentRound || 'preflop';
+            // Nested structure - could be either format
+            if (gameState.state.Players && Array.isArray(gameState.state.Players)) {
+                // Frontend format
+                players = gameState.state.Players;
+                communityCards = gameState.state.CommunityCards || [];
+                pot = gameState.state.Pot || 0;
+                currentBet = gameState.state.CurrentBet || 0;
+                currentRound = gameState.state.CurrentRound || 'preflop';
+            } else if (gameState.state.players && Array.isArray(gameState.state.players)) {
+                // Backend format
+                players = gameState.state.players;
+                communityCards = gameState.state.community_cards || [];
+                pot = gameState.state.pot || 0;
+                currentBet = gameState.state.current_bet || 0;
+                currentRound = gameState.state.current_round || 'preflop';
+            }
         }
 
         // Render community cards
@@ -1637,10 +1778,16 @@
         callBtn.textContent = `Call $${currentBet}`;
 
         // Log round if it changed
-        if (currentGameState && currentGameState.gameState &&
-            ((currentGameState.gameState.CurrentRound && currentGameState.gameState.CurrentRound !== currentRound) ||
-                (currentGameState.gameState.state && currentGameState.gameState.state.CurrentRound !== currentRound))) {
-            logMessage(`Current round: ${currentRound.toUpperCase()}`);
+        if (currentGameState && currentGameState.gameState) {
+            const oldRound = currentGameState.gameState.CurrentRound ||
+                currentGameState.gameState.current_round ||
+                (currentGameState.gameState.state &&
+                    (currentGameState.gameState.state.CurrentRound ||
+                        currentGameState.gameState.state.current_round));
+
+            if (oldRound !== currentRound) {
+                logMessage(`Current round: ${currentRound.toUpperCase()}`);
+            }
         }
     }
 
@@ -1686,12 +1833,159 @@
     // Sample game state for demo
     const demoGameState = {
         gameState: {
+            // Include both frontend and backend property names for testing
             Players: [
-                { ID: 'player1', Name: 'You', Balance: 980, HasCards: true, Folded: false, IsDealer: false, IsSmallBlind: true, IsBigBlind: false, IsCurrentTurn: true, Cards: [{ value: 'A', suit: 'hearts' }, { value: 'K', suit: 'hearts' }] },
-                { ID: 'player2', Name: 'Player 2', Balance: 1200, HasCards: true, Folded: false, IsDealer: true, IsSmallBlind: false, IsBigBlind: false, IsCurrentTurn: false },
-                { ID: 'player3', Name: 'Player 3', Balance: 750, HasCards: true, Folded: false, IsDealer: false, IsSmallBlind: false, IsBigBlind: true, IsCurrentTurn: false },
-                { ID: 'player4', Name: 'Player 4', Balance: 1500, HasCards: true, Folded: false, IsDealer: false, IsSmallBlind: false, IsBigBlind: false, IsCurrentTurn: false },
-                { ID: 'player5', Name: 'Player 5', Balance: 800, HasCards: true, Folded: false, IsDealer: false, IsSmallBlind: false, IsBigBlind: false, IsCurrentTurn: false },
+                {
+                    ID: 'player1',
+                    id: 'player1',
+                    Name: 'You',
+                    name: 'You',
+                    Balance: 980,
+                    balance: 980,
+                    HasCards: true,
+                    Folded: false,
+                    is_folded: false,
+                    IsDealer: false,
+                    is_dealer: false,
+                    IsSmallBlind: true,
+                    is_small_blind: true,
+                    IsBigBlind: false,
+                    is_big_blind: false,
+                    IsCurrentTurn: true,
+                    is_current_turn: true,
+                    Cards: [{ value: 'A', suit: 'hearts' }, { value: 'K', suit: 'hearts' }],
+                    hand: [{ value: 'A', suit: 'hearts' }, { value: 'K', suit: 'hearts' }]
+                },
+                {
+                    ID: 'player2',
+                    id: 'player2',
+                    Name: 'Player 2',
+                    name: 'Player 2',
+                    Balance: 1200,
+                    balance: 1200,
+                    HasCards: true,
+                    Folded: false,
+                    is_folded: false,
+                    IsDealer: true,
+                    is_dealer: true,
+                    IsSmallBlind: false,
+                    is_small_blind: false,
+                    IsBigBlind: false,
+                    is_big_blind: false,
+                    IsCurrentTurn: false,
+                    is_current_turn: false
+                },
+                {
+                    ID: 'player3',
+                    id: 'player3',
+                    Name: 'Player 3',
+                    name: 'Player 3',
+                    Balance: 750,
+                    balance: 750,
+                    HasCards: true,
+                    Folded: false,
+                    is_folded: false,
+                    IsDealer: false,
+                    is_dealer: false,
+                    IsSmallBlind: false,
+                    is_small_blind: false,
+                    IsBigBlind: true,
+                    is_big_blind: true,
+                    IsCurrentTurn: false,
+                    is_current_turn: false
+                },
+                {
+                    ID: 'player4',
+                    id: 'player4',
+                    Name: 'Player 4',
+                    name: 'Player 4',
+                    Balance: 1500,
+                    balance: 1500,
+                    HasCards: true,
+                    Folded: false,
+                    is_folded: false,
+                    IsDealer: false,
+                    is_dealer: false,
+                    IsSmallBlind: false,
+                    is_small_blind: false,
+                    IsBigBlind: false,
+                    is_big_blind: false,
+                    IsCurrentTurn: false,
+                    is_current_turn: false
+                },
+                {
+                    ID: 'player5',
+                    id: 'player5',
+                    Name: 'Player 5',
+                    name: 'Player 5',
+                    Balance: 800,
+                    balance: 800,
+                    HasCards: true,
+                    Folded: false,
+                    is_folded: false,
+                    IsDealer: false,
+                    is_dealer: false,
+                    IsSmallBlind: false,
+                    is_small_blind: false,
+                    IsBigBlind: false,
+                    is_big_blind: false,
+                    IsCurrentTurn: false,
+                    is_current_turn: false
+                },
+            ],
+            // Include both frontend and backend property names
+            players: [
+                {
+                    id: 'player1',
+                    name: 'You',
+                    balance: 980,
+                    is_folded: false,
+                    is_dealer: false,
+                    is_small_blind: true,
+                    is_big_blind: false,
+                    is_current_turn: true,
+                    hand: [{ value: 'A', suit: 'hearts' }, { value: 'K', suit: 'hearts' }]
+                },
+                {
+                    id: 'player2',
+                    name: 'Player 2',
+                    balance: 1200,
+                    is_folded: false,
+                    is_dealer: true,
+                    is_small_blind: false,
+                    is_big_blind: false,
+                    is_current_turn: false
+                },
+                {
+                    id: 'player3',
+                    name: 'Player 3',
+                    balance: 750,
+                    is_folded: false,
+                    is_dealer: false,
+                    is_small_blind: false,
+                    is_big_blind: true,
+                    is_current_turn: false
+                },
+                {
+                    id: 'player4',
+                    name: 'Player 4',
+                    balance: 1500,
+                    is_folded: false,
+                    is_dealer: false,
+                    is_small_blind: false,
+                    is_big_blind: false,
+                    is_current_turn: false
+                },
+                {
+                    id: 'player5',
+                    name: 'Player 5',
+                    balance: 800,
+                    is_folded: false,
+                    is_dealer: false,
+                    is_small_blind: false,
+                    is_big_blind: false,
+                    is_current_turn: false
+                },
             ],
             CommunityCards: [
                 { value: '10', suit: 'spades' },
@@ -1700,19 +1994,29 @@
                 { value: '2', suit: 'hearts' },
                 { value: '7', suit: 'spades' }
             ],
+            community_cards: [
+                { value: '10', suit: 'spades' },
+                { value: 'J', suit: 'diamonds' },
+                { value: 'Q', suit: 'clubs' },
+                { value: '2', suit: 'hearts' },
+                { value: '7', suit: 'spades' }
+            ],
             Pot: 120,
+            pot: 120,
             CurrentBet: 20,
+            current_bet: 20,
             CurrentRound: 'river',
+            current_round: 'river',
             playerCards: {}
         },
         data: {
             roomId: 'room_1',
             players: [
-                { ID: 'player1', Name: 'You', position: 0 },
-                { ID: 'player2', Name: 'Player 2', position: 1 },
-                { ID: 'player3', Name: 'Player 3', position: 2 },
-                { ID: 'player4', Name: 'Player 4', position: 3 },
-                { ID: 'player5', Name: 'Player 5', position: 4 },
+                { id: 'player1', ID: 'player1', name: 'You', Name: 'You', position: 0 },
+                { id: 'player2', ID: 'player2', name: 'Player 2', Name: 'Player 2', position: 1 },
+                { id: 'player3', ID: 'player3', name: 'Player 3', Name: 'Player 3', position: 2 },
+                { id: 'player4', ID: 'player4', name: 'Player 4', Name: 'Player 4', position: 3 },
+                { id: 'player5', ID: 'player5', name: 'Player 5', Name: 'Player 5', position: 4 },
             ],
             maxPlayers: 9
         }

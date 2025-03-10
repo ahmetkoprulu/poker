@@ -31,12 +31,12 @@ const (
 type HoldemMessageType string
 
 const (
-	HoldemMessageGameStart    HoldemMessageType = "gameStart"
-	HoldemMessageGameEnd      HoldemMessageType = "gameEnd"
-	HoldemMessageRoundStart   HoldemMessageType = "roundStart"
-	HoldemMessageRoundEnd     HoldemMessageType = "roundEnd"
-	HoldemMessagePlayerTurn   HoldemMessageType = "playerTurn"
-	HoldemMessagePlayerAction HoldemMessageType = "playerAction"
+	HoldemMessageGameStart    HoldemMessageType = "game_start"
+	HoldemMessageGameEnd      HoldemMessageType = "game_end"
+	HoldemMessageRoundStart   HoldemMessageType = "round_start"
+	HoldemMessageRoundEnd     HoldemMessageType = "round_end"
+	HoldemMessagePlayerTurn   HoldemMessageType = "player_turn"
+	HoldemMessagePlayerAction HoldemMessageType = "player_action"
 	HoldemMessageShowdown     HoldemMessageType = "showdown"
 	HoldemMessageWinner       HoldemMessageType = "winner"
 )
@@ -504,14 +504,6 @@ func (h *Holdem) PostBlinds() {
 	log.Printf("[BLINDS] Player %s posts big blind: %d", h.State.BigBlindSeat.Player.Client.User.Player.ID, bigBlindAmount)
 }
 
-func (h *Holdem) NextActivePlayerAfter(pos int) int {
-	players := h.GetPlayersInRound()
-	numPlayers := len(players)
-	nextPlayerIndex := (pos + 1) % numPlayers
-
-	return nextPlayerIndex
-}
-
 func (h *Holdem) BettingRound() error {
 	log.Printf("[INFO] Starting betting round for %v", h.State.CurrentRound)
 	for !h.State.RoundComplete {
@@ -800,37 +792,6 @@ func (h *Holdem) CheckRoundComplete() bool {
 	// 2. Gone all-in
 	// 3. Called the highest bet
 	return true
-}
-
-// Helper function to get the first player to act in the current round
-func (h *Holdem) GetFirstToActInRound() *TableSeat {
-	if h.State.CurrentRound == PreFlop { // In pre-flop, action starts after the big blind
-		return h.State.BigBlindSeat.Next
-	} else { // In post-flop rounds, action starts after the dealer
-		return h.State.DealerSeat.Next
-	}
-}
-
-// Helper function to check if seat a has acted after seat b
-func (h *Holdem) hasActedAfter(seatA, seatB *TableSeat) bool {
-	if seatA == nil || seatB == nil {
-		return false
-	}
-
-	if seatA == seatB { // If they're the same seat, return false (need to go around the table)
-		return false
-	}
-
-	current := seatB
-	for { // Start from seatB and move forward until we either find seatA or come back to seatB
-		current = current.Next
-		if current == seatA {
-			return true
-		}
-		if current == seatB {
-			return false
-		}
-	}
 }
 
 func (h *Holdem) CanGameContinue() bool {
@@ -1455,7 +1416,7 @@ type PlayerView struct {
 	Position      int              `json:"position"`
 	Name          string           `json:"name"`
 	Balance       int              `json:"balance"`
-	HasCards      bool             `json:"has_cards"`
+	Hand          []models.Card    `json:"hand"`
 	IsFolded      bool             `json:"is_folded"`
 	IsAllIn       bool             `json:"is_all_in"`
 	IsDealer      bool             `json:"is_dealer"`
@@ -1491,7 +1452,7 @@ func (h *Holdem) GetGameState() interface{} {
 			Position: player.Position,
 			Name:     player.Client.User.Player.Username,
 			Balance:  player.Balance,
-			HasCards: false,
+			Hand:     []models.Card{},
 			IsFolded: false,
 			IsAllIn:  false,
 		}
@@ -1502,7 +1463,7 @@ func (h *Holdem) GetGameState() interface{} {
 			continue
 		}
 
-		playerView.HasCards = seat.Hand != nil
+		playerView.Hand = seat.Hand
 		playerView.IsFolded = player.Status != GamePlayerStatusWaiting && seat.Hand == nil
 		playerView.IsAllIn = player.Status != GamePlayerStatusWaiting && player.Balance == 0
 		playerView.IsDealer = i == h.State.DealerSeat.Position

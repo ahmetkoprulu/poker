@@ -73,6 +73,7 @@ type EventStore interface {
 	UpdatePlayerEvent(ctx context.Context, playerEvent *models.PlayerEvent) error
 	GetPlayerEvent(ctx context.Context, playerID, scheduleID string) (*models.PlayerEvent, error)
 	ListPlayerEvents(ctx context.Context, playerID string) ([]*models.PlayerEvent, error)
+	ListPlayerEventScheduleDetails(ctx context.Context, playerID string) ([]*models.PlayerEventScheduleDetail, error)
 }
 
 func parseConfig[T any](input map[string]interface{}, config *T) error {

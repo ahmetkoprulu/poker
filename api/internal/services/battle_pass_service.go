@@ -19,6 +19,7 @@ var (
 	ErrRewardAlreadyClaimed = errors.New("reward already claimed")
 	ErrInsufficientLevel    = errors.New("insufficient level to claim reward")
 	ErrPremiumRequired      = errors.New("premium battle pass required to claim this reward")
+	ErrPlayerIDRequired     = errors.New("player_id_required")
 )
 
 type BattlePassService struct {
@@ -602,16 +603,9 @@ func (s *BattlePassService) GetPlayerClaimedRewards(ctx context.Context, playerB
 	return rewards, nil
 }
 
-// GetPlayerBattlePassDetails gets detailed battle pass progress including claimed rewards
-type BattlePassProgressDetails struct {
-	Progress       models.PlayerBattlePass         `json:"progress"`
-	ClaimedRewards []models.PlayerBattlePassReward `json:"claimed_rewards"`
-	Levels         []models.BattlePassLevel        `json:"levels"`
-}
-
-func (s *BattlePassService) GetPlayerBattlePassDetails(ctx context.Context, playerBattlePassID string) (*BattlePassProgressDetails, error) {
+func (s *BattlePassService) GetPlayerBattlePassDetails(ctx context.Context, playerBattlePassID string) (*models.BattlePassProgressDetails, error) {
 	// Get player progress
-	progress, err := s.GetPlayerBattlePassProgress(ctx, playerBattlePassID)
+	progress, err := s.GetOrCreatePlayerBattlePass(ctx, playerBattlePassID, playerBattlePassID)
 	if err != nil {
 		return nil, err
 	}
@@ -654,9 +648,29 @@ func (s *BattlePassService) GetPlayerBattlePassDetails(ctx context.Context, play
 		levels = append(levels, level)
 	}
 
-	return &BattlePassProgressDetails{
+	return &models.BattlePassProgressDetails{
 		Progress:       *progress,
 		ClaimedRewards: claimedRewards,
 		Levels:         levels,
 	}, nil
+}
+
+func (s *BattlePassService) GetOrCreatePlayerBattlePassDetails(ctx context.Context, playerID string) (*models.BattlePassProgressDetails, error) {
+	if playerID == "" {
+		return nil, ErrPlayerIDRequired
+	}
+
+	// Get active battle pass
+	battlePass, err := s.GetActiveBattlePass(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get detailed progress
+	details, err := s.GetPlayerBattlePassDetails(ctx, battlePass.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return details, nil
 }

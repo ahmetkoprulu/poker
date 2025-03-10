@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/ahmetkoprulu/rtrp/common/data"
 	"github.com/ahmetkoprulu/rtrp/models"
@@ -492,4 +493,67 @@ func (s *PgEventStore) ListPlayerEvents(ctx context.Context, playerID string) ([
 	}
 
 	return playerEvents, nil
+}
+
+func (s *PgEventStore) ListPlayerEventScheduleDetails(ctx context.Context, playerID string) ([]*models.PlayerEventScheduleDetail, error) {
+	query := `
+		SELECT es.id, es.event_id, es.start_time, es.end_time, e.type, e.name, e.assets, e.config, pe.score, pe.attempts, pe.last_play, pe.tickets, pe.state
+		FROM event_schedules es
+		JOIN events e ON es.event_id = e.id
+		LEFT JOIN player_events pe ON pe.schedule_id = es.id AND pe.player_id = $1
+		WHERE es.start_time <= NOW() AND es.end_time >= NOW()
+	`
+
+	rows, err := s.db.Query(ctx, query, playerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var playerEventDetails []*models.PlayerEventScheduleDetail
+	for rows.Next() {
+		playerEventDetail := &models.PlayerEventScheduleDetail{
+			Event:       models.Event{},
+			PlayerEvent: nil,
+		}
+		var score *int64
+		var attempts *int
+		var lastPlay *time.Time
+		var tickets *int
+		var state *map[string]interface{}
+
+		err := rows.Scan(
+			&playerEventDetail.ScheduleID,
+			&playerEventDetail.Event.ID,
+			&playerEventDetail.StartTime,
+			&playerEventDetail.EndTime,
+			&playerEventDetail.Event.Type,
+			&playerEventDetail.Event.Name,
+			&playerEventDetail.Event.Assets,
+			&playerEventDetail.Event.Config,
+			&score,
+			&attempts,
+			&lastPlay,
+			&tickets,
+			&state,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if score != nil {
+			playerEventDetail.PlayerEvent = &models.PlayerEventSchedule{
+				ScheduleID: playerEventDetail.ScheduleID,
+				Score:      *score,
+				Attempts:   *attempts,
+				LastPlay:   *lastPlay,
+				Tickets:    *tickets,
+				State:      *state,
+			}
+		}
+
+		playerEventDetails = append(playerEventDetails, playerEventDetail)
+	}
+
+	return playerEventDetails, nil
 }

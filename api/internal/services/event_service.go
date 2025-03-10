@@ -96,6 +96,24 @@ func (s *EventService) GetSchedulesByEvent(ctx context.Context, eventID string) 
 	return s.store.GetSchedulesByEventID(ctx, eventID)
 }
 
+func (s *EventService) GetPlayerEventSchedules(ctx context.Context, playerID string) ([]*models.PlayerEventScheduleDetail, error) {
+	playerEventSchedules, err := s.store.ListPlayerEventScheduleDetails(ctx, playerID)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, playerEventSchedule := range playerEventSchedules {
+		if playerEventSchedule.PlayerEvent == nil {
+			playerEventSchedule.PlayerEvent, err = s.GetOrCreatePlayerEvent(ctx, playerID, playerEventSchedule.ScheduleID)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return playerEventSchedules, nil
+}
+
 func (s *EventService) GetOrCreatePlayerEvent(ctx context.Context, playerID, scheduleID string) (*models.PlayerEventSchedule, error) {
 	result := &models.PlayerEventSchedule{}
 	playerEvent, err := s.store.GetPlayerEvent(ctx, playerID, scheduleID)

@@ -49,8 +49,8 @@ type Event struct {
 	Name      string                 `json:"name"`
 	Assets    []Asset                `json:"assets"`
 	Config    map[string]interface{} `json:"config"`
-	CreatedAt time.Time              `json:"created_at"`
-	UpdatedAt time.Time              `json:"updated_at"`
+	CreatedAt time.Time              `json:"created_at,omitempty"`
+	UpdatedAt time.Time              `json:"updated_at,omitempty"`
 }
 
 type EventSchedule struct {
@@ -59,7 +59,8 @@ type EventSchedule struct {
 	StartTime time.Time `json:"start_time"`
 	EndTime   time.Time `json:"end_time"`
 	IsActive  bool      `json:"is_active"`
-	CreatedAt time.Time `json:"created_at"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
 
 	Event *Event `json:"event"`
 }
@@ -69,16 +70,17 @@ type PlayerEvent struct {
 	ScheduleID string `json:"schedule_id"`
 	PlayerID   string `json:"player_id"`
 
-	Score    int64     `json:"score"`
-	Attempts int       `json:"attempts"`
-	LastPlay time.Time `json:"last_play"`
+	Score    int64 `json:"score"`
+	Attempts int   `json:"attempts"`
 
-	Tickets   int                    `json:"tickets_left"`
-	State     map[string]interface{} `json:"state"`
-	ExpiresAt time.Time              `json:"expires_at"`
+	Tickets     int                    `json:"tickets_left"`
+	FreeTickets int                    `json:"free_tickets"`
+	State       map[string]interface{} `json:"state"`
 
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	LastPlay  time.Time `json:"last_play"`
+	ExpiresAt time.Time `json:"expires_at,omitempty"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
 }
 
 type EventPlayRequest struct {
@@ -134,11 +136,20 @@ type PlayerEventSchedule struct {
 	ScheduleID string                 `json:"schedule_id"`
 	Score      int64                  `json:"score"`
 	Attempts   int                    `json:"attempts"`
-	LastPlay   time.Time              `json:"last_play"`
 	Tickets    int                    `json:"tickets_left"`
 	State      map[string]interface{} `json:"state"`
+	LastPlay   time.Time              `json:"last_play"`
 }
 
 type PlayEventRequest struct {
 	Data map[string]interface{} `json:"play_data"`
+}
+
+type PlayerEventScheduleDetail struct {
+	ScheduleID string
+	StartTime  time.Time
+	EndTime    time.Time
+
+	Event       Event
+	PlayerEvent *PlayerEventSchedule
 }
