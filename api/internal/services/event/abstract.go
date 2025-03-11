@@ -74,6 +74,7 @@ type EventStore interface {
 	GetPlayerEvent(ctx context.Context, playerID, scheduleID string) (*models.PlayerEvent, error)
 	ListPlayerEvents(ctx context.Context, playerID string) ([]*models.PlayerEvent, error)
 	ListPlayerEventScheduleDetails(ctx context.Context, playerID string) ([]*models.PlayerEventScheduleDetail, error)
+	BatchIncrementPlayerEventFreeTickets(ctx context.Context, playerID string, updates []models.PlayerEventSchedule) error
 }
 
 func parseConfig[T any](input map[string]interface{}, config *T) error {

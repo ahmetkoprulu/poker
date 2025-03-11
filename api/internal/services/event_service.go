@@ -111,6 +111,8 @@ func (s *EventService) GetPlayerEventSchedules(ctx context.Context, playerID str
 		}
 	}
 
+	s.checkFreeTicket(ctx, playerID, playerEventSchedules)
+
 	return playerEventSchedules, nil
 }
 
@@ -182,7 +184,6 @@ func (s *EventService) UpdatePlayerEvent(ctx context.Context, playerEvent *model
 	return s.store.UpdatePlayerEvent(ctx, playerEvent)
 }
 
-// PlayEvent handles a game play attempt
 func (s *EventService) PlayEvent(ctx context.Context, playerID, scheduleID string, playData map[string]interface{}) (*models.EventPlayResult, error) {
 	// Get user event
 	playerEvent, err := s.store.GetPlayerEvent(ctx, playerID, scheduleID)
@@ -279,4 +280,32 @@ func (s *EventService) RefreshPlayerEventState(ctx context.Context, playerID, sc
 	}
 
 	return playerEvent, nil
+}
+
+func (s *EventService) checkFreeTicket(ctx context.Context, playerID string, scheduleDetails []*models.PlayerEventScheduleDetail) {
+	now := time.Now()
+	updates := make([]models.PlayerEventSchedule, 0)
+	for _, scheduleDetail := range scheduleDetails {
+		lastPlay := scheduleDetail.PlayerEvent.LastPlay
+		freeTicketInterval := scheduleDetail.Event.GeneralConfig.FreeTicketInterval
+
+		if scheduleDetail.PlayerEvent.FreeTickets > 0 {
+			continue
+		}
+
+		if freeTicketInterval == 0 {
+			continue
+		}
+
+		if lastPlay.Add(time.Duration(freeTicketInterval) * time.Second).After(now) {
+			continue
+		}
+
+		updates = append(updates, models.PlayerEventSchedule{
+			ScheduleID:  scheduleDetail.ScheduleID,
+			FreeTickets: scheduleDetail.Event.GeneralConfig.FreeTicketAmount,
+		})
+	}
+
+	s.store.BatchIncrementPlayerEventFreeTickets(ctx, playerID, updates)
 }

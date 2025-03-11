@@ -44,13 +44,20 @@ type Asset struct {
 }
 
 type Event struct {
-	ID        string                 `json:"id"`
-	Type      EventType              `json:"type"`
-	Name      string                 `json:"name"`
-	Assets    []Asset                `json:"assets"`
-	Config    map[string]interface{} `json:"config"`
-	CreatedAt time.Time              `json:"created_at,omitempty"`
-	UpdatedAt time.Time              `json:"updated_at,omitempty"`
+	ID            string             `json:"id"`
+	Type          EventType          `json:"type"`
+	Name          string             `json:"name"`
+	Assets        []Asset            `json:"assets"`
+	Config        map[string]any     `json:"config"`
+	GeneralConfig EventGeneralConfig `json:"general_config"`
+	CreatedAt     time.Time          `json:"created_at,omitempty"`
+	UpdatedAt     time.Time          `json:"updated_at,omitempty"`
+}
+
+type EventGeneralConfig struct {
+	FreeTicketInterval int `json:"free_ticket_interval"`
+	FreeTicketAmount   int `json:"free_ticket_amount"`
+	FreeTicketXpTarget int `json:"free_ticket_xp_target"`
 }
 
 type EventSchedule struct {
@@ -133,12 +140,13 @@ type ActiveEventSchedule struct {
 }
 
 type PlayerEventSchedule struct {
-	ScheduleID string                 `json:"schedule_id"`
-	Score      int64                  `json:"score"`
-	Attempts   int                    `json:"attempts"`
-	Tickets    int                    `json:"tickets_left"`
-	State      map[string]interface{} `json:"state"`
-	LastPlay   time.Time              `json:"last_play"`
+	ScheduleID  string                 `json:"schedule_id"`
+	Score       int64                  `json:"score"`
+	Attempts    int                    `json:"attempts"`
+	Tickets     int                    `json:"tickets_left"`
+	FreeTickets int                    `json:"free_tickets"`
+	State       map[string]interface{} `json:"state"`
+	LastPlay    time.Time              `json:"last_play"`
 }
 
 type PlayEventRequest struct {
