@@ -184,7 +184,7 @@ func (s *BattlePassService) AddXP(ctx context.Context, playerBattlePassID string
 
 	// Get current player progress and battle pass info
 	query := `
-		SELECT pbp.current_level, pbp.current_xp, bp.max_level
+		SELECT pbp.battle_pass_id, pbp.current_level, pbp.current_xp, bp.max_level
 		FROM player_battle_passes pbp
 		JOIN battle_passes bp ON pbp.battle_pass_id = bp.id
 		WHERE pbp.id = $1
@@ -192,7 +192,8 @@ func (s *BattlePassService) AddXP(ctx context.Context, playerBattlePassID string
 	`
 
 	var currentLevel, currentXP, maxLevel int
-	err = tx.QueryRow(ctx, query, playerBattlePassID).Scan(&currentLevel, &currentXP, &maxLevel)
+	var battlePassID string
+	err = tx.QueryRow(ctx, query, playerBattlePassID).Scan(&battlePassID, &currentLevel, &currentXP, &maxLevel)
 	if err != nil {
 		return err
 	}
@@ -237,15 +238,11 @@ func (s *BattlePassService) AddXP(ctx context.Context, playerBattlePassID string
 		query = `
 			SELECT required_xp
 			FROM battle_pass_levels
-			WHERE battle_pass_id = (
-				SELECT battle_pass_id
-				FROM player_battle_passes
-				WHERE id = $1
-			)
+			WHERE battle_pass_id = $1
 			AND level = $2
 		`
 
-		err = tx.QueryRow(ctx, query, playerBattlePassID, newLevel+1).Scan(&requiredXP)
+		err = tx.QueryRow(ctx, query, battlePassID, newLevel+1).Scan(&requiredXP)
 		if err != nil {
 			break // No more levels found
 		}

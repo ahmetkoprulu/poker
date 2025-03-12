@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/ahmetkoprulu/rtrp/common/data"
@@ -497,7 +498,7 @@ func (s *PgEventStore) ListPlayerEvents(ctx context.Context, playerID string) ([
 
 func (s *PgEventStore) ListPlayerEventScheduleDetails(ctx context.Context, playerID string) ([]*models.PlayerEventScheduleDetail, error) {
 	query := `
-		SELECT es.id, es.event_id, es.start_time, es.end_time, e.type, e.name, e.assets, e.config, pe.score, pe.attempts, pe.last_play, pe.tickets, pe.state
+		SELECT es.id, es.event_id, es.start_time, es.end_time, e.type, e.name, e.assets, e.config, e.general_config, pe.score, pe.attempts, pe.last_play, pe.tickets, pe.state
 		FROM event_schedules es
 		JOIN events e ON es.event_id = e.id
 		LEFT JOIN player_events pe ON pe.schedule_id = es.id AND pe.player_id = $1
@@ -521,6 +522,7 @@ func (s *PgEventStore) ListPlayerEventScheduleDetails(ctx context.Context, playe
 		var lastPlay *time.Time
 		var tickets *int
 		var state *map[string]interface{}
+		var generalConfig []byte
 
 		err := rows.Scan(
 			&playerEventDetail.ScheduleID,
@@ -531,6 +533,7 @@ func (s *PgEventStore) ListPlayerEventScheduleDetails(ctx context.Context, playe
 			&playerEventDetail.Event.Name,
 			&playerEventDetail.Event.Assets,
 			&playerEventDetail.Event.Config,
+			&generalConfig,
 			&score,
 			&attempts,
 			&lastPlay,
@@ -552,8 +555,39 @@ func (s *PgEventStore) ListPlayerEventScheduleDetails(ctx context.Context, playe
 			}
 		}
 
+		if err := json.Unmarshal(generalConfig, &playerEventDetail.Event.GeneralConfig); err != nil {
+			return nil, err
+		}
+
 		playerEventDetails = append(playerEventDetails, playerEventDetail)
 	}
 
 	return playerEventDetails, nil
+}
+
+func (s *PgEventStore) BatchIncrementPlayerEventFreeTickets(ctx context.Context, playerID string, updates []models.PlayerEventSchedule) error {
+	query := `
+		UPDATE player_events
+		SET free_tickets = $3
+		WHERE player_id = $1 AND schedule_id = $2
+	`
+
+	batch := &pgx.Batch{}
+	for _, update := range updates {
+		batch.Queue(query, playerID, update.ScheduleID, update.FreeTickets)
+	}
+
+	br := s.db.SendBatch(ctx, batch)
+	defer br.Close()
+
+	for i := 0; i < batch.Len(); i++ {
+		_, err := br.Exec()
+		if err != nil {
+			// return err
+			// Log The Error
+			fmt.Println(err)
+		}
+	}
+
+	return nil
 }
