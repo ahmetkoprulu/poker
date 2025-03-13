@@ -73,7 +73,7 @@ func (g *PathGame) Initialize(ctx context.Context, event models.Event, playerEve
 			CurrentStep: 0,
 			LastRoll:    make([]int, 0),
 		}
-		g.PlayerEvent.State = stateToMap[PathGameState](g.state)
+		g.PlayerEvent.State = stateToMap(g.state)
 	} else {
 		if err := parseState[PathGameState](g.PlayerEvent.State, &g.state); err != nil {
 			return err
@@ -106,8 +106,9 @@ func (g *PathGame) ProcessPlay(ctx context.Context, req *models.EventPlayRequest
 	// Get current step directly from array index
 	currentStep := &g.config.Steps[currentPosition]
 	pathResult := &PathGameResult{
-		TotalSteps: newTotalSteps,
-		LastRoll:   rolls,
+		TotalSteps:    newTotalSteps,
+		LastRoll:      rolls,
+		LevelUpReward: make([]models.Item, 0),
 	}
 
 	result := &models.EventPlayResult{
@@ -120,7 +121,8 @@ func (g *PathGame) ProcessPlay(ctx context.Context, req *models.EventPlayRequest
 	g.state.CurrentStep = currentPosition
 	g.state.LastRoll = rolls
 
-	result.Rewards = append(result.Rewards, currentStep.Reward)
+	reward := g.HandleMultiplier(g.PlayerEvent, currentStep.Reward)
+	result.Rewards = append(result.Rewards, reward)
 
 	// Add lap completion bonus if we just completed a lap
 	if completedLaps > prevLaps {
@@ -140,7 +142,20 @@ func (g *PathGame) ProcessPlay(ctx context.Context, req *models.EventPlayRequest
 }
 
 func (g *PathGame) UpdateState(ctx context.Context, playerEvent *models.PlayerEvent, result *models.EventPlayResult) error {
+	var ticketReward *models.Item
+	for _, reward := range result.Rewards {
+		if reward.Type == models.ItemTypeEvent {
+			ticketReward = &reward
+			break
+		}
+	}
+
+	if ticketReward != nil {
+		playerEvent.Tickets += ticketReward.Amount
+	}
+
 	playerEvent.Score = g.PlayerEvent.Score
+	playerEvent.Multiplier = g.PlayerEvent.Multiplier
 	playerEvent.Attempts++
 	playerEvent.LastPlay = time.Now()
 	playerEvent.Tickets -= g.config.EntryFee
@@ -159,14 +174,18 @@ func (g *PathGame) GetInitialState(event models.Event) map[string]interface{} {
 	})
 }
 
-// Helper methods
-
 func (g *PathGame) rollDice() []int {
 	rolls := make([]int, g.config.DiceCount)
 	for i := 0; i < g.config.DiceCount; i++ {
 		rolls[i] = rand.Intn(g.config.DiceSides) + 1
 	}
 	return rolls
+}
+
+func (g *PathGame) GetRewards(eventPlayResult *models.EventPlayResult) []models.Item {
+	pathEventResult := eventPlayResult.Data.(*PathGameResult)
+	rewards := append(eventPlayResult.Rewards, pathEventResult.LevelUpReward...)
+	return rewards
 }
 
 // func (g *PathGame) applyEffects(effects map[string]interface{}, result *models.EventPlayResult) {

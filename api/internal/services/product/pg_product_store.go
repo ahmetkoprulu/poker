@@ -33,11 +33,11 @@ type GoldHandler struct{}
 func (h *GoldHandler) HandleReward(ctx context.Context, tx data.QueryRunner, playerID string, item models.Item) error {
 	updateQuery := `
 		UPDATE players
-		SET gold = gold + $1
+		SET golds = golds + $1
 		WHERE id = $2
 	`
 	if _, err := tx.Exec(ctx, updateQuery, item.Amount, playerID); err != nil {
-		return fmt.Errorf("failed to update player gold: %w", err)
+		return fmt.Errorf("failed to update player golds: %w", err)
 	}
 	return nil
 }
@@ -55,6 +55,10 @@ func (h *EventHandler) HandleReward(ctx context.Context, tx data.QueryRunner, pl
 		return fmt.Errorf("failed to unmarshal event item metadata: %w", err)
 	}
 	eventID := metadata.EventID
+	if eventID == "" {
+		// return fmt.Errorf("event ID is empty")
+		return nil
+	}
 
 	query := `
 		UPDATE player_events
@@ -118,16 +122,16 @@ func (h *BattlePassXPHandler) HandleReward(ctx context.Context, tx data.QueryRun
 	}
 
 	query := `
-		SELECT pbp.battle_pass_id, pbp.current_level, pbp.current_xp, bp.max_level
+		SELECT pbp.id, pbp.battle_pass_id, pbp.current_level, pbp.current_xp, bp.max_level
 		FROM player_battle_passes pbp
 		JOIN battle_passes bp ON pbp.battle_pass_id = bp.id
-		WHERE pbp.id = $1
+		WHERE pbp.battle_pass_id = $1 AND pbp.player_id = $2
 		FOR UPDATE
 	`
 
 	var currentLevel, currentXP, maxLevel int
-	var battlePassID string
-	err = tx.QueryRow(ctx, query, activeBattlePassID).Scan(&battlePassID, &currentLevel, &currentXP, &maxLevel)
+	var battlePassID, playerBattlePassID string
+	err = tx.QueryRow(ctx, query, activeBattlePassID, playerID).Scan(&playerBattlePassID, &battlePassID, &currentLevel, &currentXP, &maxLevel)
 	if err != nil {
 		return err
 	}
@@ -165,7 +169,7 @@ func (h *BattlePassXPHandler) HandleReward(ctx context.Context, tx data.QueryRun
 		WHERE id = $3
 	`
 
-	_, err = tx.Exec(ctx, query, newLevel, newXP, activeBattlePassID)
+	_, err = tx.Exec(ctx, query, newLevel, newXP, playerBattlePassID)
 	if err != nil {
 		return err
 	}
@@ -176,6 +180,28 @@ func (h *BattlePassXPHandler) HandleReward(ctx context.Context, tx data.QueryRun
 type MultiplierHandler struct{}
 
 func (h *MultiplierHandler) HandleReward(ctx context.Context, tx data.QueryRunner, playerID string, item models.Item) error {
+	// var metadata models.MultiplierItemMetadata
+	// var metadataBytes, err = json.Marshal(item.Metadata)
+	// if err != nil {
+	// 	return fmt.Errorf("failed to marshal multiplier item metadata: %w", err)
+	// }
+
+	// if err := json.Unmarshal(metadataBytes, &metadata); err != nil {
+	// 	return fmt.Errorf("failed to unmarshal multiplier item metadata: %w", err)
+	// }
+	// eventID := metadata.EventID
+
+	// query := `
+	// 	UPDATE player_events
+	// 	SET multiplier = multiplier + $1
+	// 	WHERE id = $2 AND event_id = $3
+	// `
+
+	// _, err = tx.Exec(ctx, query, item.Amount, eventID)
+	// if err != nil {
+	// 	return fmt.Errorf("failed to update player event multiplier: %w", err)
+	// }
+
 	return nil
 }
 
@@ -193,6 +219,11 @@ func NewPgProductStore(db *data.PgDbContext) *PgProductStore {
 	// Register handlers for different item types
 	store.itemHandlers[models.ItemTypeChips] = &ChipsHandler{}
 	store.itemHandlers[models.ItemTypeGold] = &GoldHandler{}
+	store.itemHandlers[models.ItemTypeSpin] = &SpinHandler{}
+	store.itemHandlers[models.ItemTypeGoldSpin] = &GoldSpinHandler{}
+	store.itemHandlers[models.ItemTypeEvent] = &EventHandler{}
+	store.itemHandlers[models.ItemTypeMultiplier] = &MultiplierHandler{}
+	store.itemHandlers[models.ItemTypeBattlePassXP] = &BattlePassXPHandler{}
 
 	return store
 }
@@ -213,21 +244,22 @@ func (s *PgProductStore) GetProduct(ctx context.Context, id string) (*models.Pro
 	return &product, nil
 }
 
-func (s *PgProductStore) GiveRewardToPlayer(ctx context.Context, items []models.Item, playerID string) error {
-	s.db.WithTransaction(ctx, func(tx data.QueryRunner) error {
-		for _, item := range items {
-			// Handle the reward using appropriate handler
-			if handler, exists := s.itemHandlers[item.Type]; exists {
-				if err := handler.HandleReward(ctx, tx, playerID, item); err != nil {
-					return err
-				}
-			} else {
-				return fmt.Errorf("no handler found for item type: %v", item.Type)
+func (s *PgProductStore) GiveRewardToPlayerWithTx(ctx context.Context, tx data.QueryRunner, items []models.Item, playerID string) error {
+	for _, item := range items {
+		if handler, exists := s.itemHandlers[item.Type]; exists {
+			if err := handler.HandleReward(ctx, tx, playerID, item); err != nil {
+				return err
 			}
+		} else {
+			return fmt.Errorf("no handler found for item type: %v", item.Type)
 		}
-
-		return nil
-	})
+	}
 
 	return nil
+}
+
+func (s *PgProductStore) GiveRewardToPlayer(ctx context.Context, items []models.Item, playerID string) error {
+	return s.db.WithTransaction(ctx, func(tx data.QueryRunner) error {
+		return s.GiveRewardToPlayerWithTx(ctx, tx, items, playerID)
+	})
 }

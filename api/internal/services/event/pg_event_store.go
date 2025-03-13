@@ -346,8 +346,8 @@ func (s *PgEventStore) GetSchedulesByEventID(ctx context.Context, eventID string
 // Player Event operations
 func (s *PgEventStore) CreatePlayerEvent(ctx context.Context, playerEvent *models.PlayerEvent) error {
 	query := `
-		INSERT INTO player_events (id, player_id, schedule_id, score, attempts, last_play, tickets, state, expires_at, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		INSERT INTO player_events (id, player_id, event_id, schedule_id, score, attempts, last_play, tickets, state, expires_at, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`
 
 	stateBytes, err := json.Marshal(playerEvent.State)
@@ -358,6 +358,7 @@ func (s *PgEventStore) CreatePlayerEvent(ctx context.Context, playerEvent *model
 	_, err = s.db.Exec(ctx, query,
 		playerEvent.ID,
 		playerEvent.PlayerID,
+		playerEvent.EventID,
 		playerEvent.ScheduleID,
 		playerEvent.Score,
 		playerEvent.Attempts,
@@ -382,8 +383,8 @@ func (s *PgEventStore) CreatePlayerEvent(ctx context.Context, playerEvent *model
 func (s *PgEventStore) UpdatePlayerEvent(ctx context.Context, playerEvent *models.PlayerEvent) error {
 	query := `
 		UPDATE player_events
-		SET score = $1, attempts = $2, last_play = $3, tickets = $4, state = $5, updated_at = $6
-		WHERE id = $7
+		SET score = $1, attempts = $2, last_play = $3, tickets = $4, multiplier = $5, state = $6, updated_at = $7
+		WHERE id = $8
 	`
 
 	stateBytes, err := json.Marshal(playerEvent.State)
@@ -396,6 +397,7 @@ func (s *PgEventStore) UpdatePlayerEvent(ctx context.Context, playerEvent *model
 		playerEvent.Attempts,
 		playerEvent.LastPlay,
 		playerEvent.Tickets,
+		playerEvent.Multiplier,
 		stateBytes,
 		playerEvent.UpdatedAt,
 		playerEvent.ID,
@@ -410,7 +412,7 @@ func (s *PgEventStore) UpdatePlayerEvent(ctx context.Context, playerEvent *model
 
 func (s *PgEventStore) GetPlayerEvent(ctx context.Context, playerID, scheduleID string) (*models.PlayerEvent, error) {
 	query := `
-		SELECT id, player_id, schedule_id, score, attempts, last_play, tickets, state, expires_at, created_at, updated_at
+		SELECT id, player_id, event_id, schedule_id, score, multiplier, attempts, last_play, tickets, free_tickets, state, expires_at, created_at, updated_at
 		FROM player_events
 		WHERE player_id = $1 AND schedule_id = $2
 	`
@@ -421,11 +423,14 @@ func (s *PgEventStore) GetPlayerEvent(ctx context.Context, playerID, scheduleID 
 	err := s.db.QueryRow(ctx, query, playerID, scheduleID).Scan(
 		&playerEvent.ID,
 		&playerEvent.PlayerID,
+		&playerEvent.EventID,
 		&playerEvent.ScheduleID,
 		&playerEvent.Score,
+		&playerEvent.Multiplier,
 		&playerEvent.Attempts,
 		&playerEvent.LastPlay,
 		&playerEvent.Tickets,
+		&playerEvent.FreeTickets,
 		&stateBytes,
 		&playerEvent.ExpiresAt,
 		&playerEvent.CreatedAt,
@@ -448,7 +453,7 @@ func (s *PgEventStore) GetPlayerEvent(ctx context.Context, playerID, scheduleID 
 
 func (s *PgEventStore) ListPlayerEvents(ctx context.Context, playerID string) ([]*models.PlayerEvent, error) {
 	query := `
-		SELECT id, player_id, schedule_id, score, attempts, last_play, tickets, state, expires_at, created_at, updated_at
+		SELECT id, player_id, event_id, schedule_id, score, attempts, last_play, tickets, state, expires_at, created_at, updated_at
 		FROM player_events
 		WHERE player_id = $1
 		ORDER BY created_at DESC
@@ -468,6 +473,7 @@ func (s *PgEventStore) ListPlayerEvents(ctx context.Context, playerID string) ([
 		err := rows.Scan(
 			&playerEvent.ID,
 			&playerEvent.PlayerID,
+			&playerEvent.EventID,
 			&playerEvent.ScheduleID,
 			&playerEvent.Score,
 			&playerEvent.Attempts,

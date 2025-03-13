@@ -74,6 +74,7 @@ type EventSchedule struct {
 
 type PlayerEvent struct {
 	ID         string `json:"id"`
+	EventID    string `json:"event_id"`
 	ScheduleID string `json:"schedule_id"`
 	PlayerID   string `json:"player_id"`
 
@@ -82,6 +83,7 @@ type PlayerEvent struct {
 
 	Tickets     int                    `json:"tickets_left"`
 	FreeTickets int                    `json:"free_tickets"`
+	Multiplier  int                    `json:"multiplier"`
 	State       map[string]interface{} `json:"state"`
 
 	LastPlay  time.Time `json:"last_play"`

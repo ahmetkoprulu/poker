@@ -28,6 +28,9 @@ type Player struct {
 	ProfilePicURL string `json:"profile_pic_url"`
 	UserID        string `json:"-"`
 	Chips         int64  `json:"chips"`
+	Golds         int64  `json:"golds"`
+	Spins         int64  `json:"spins"`
+	GoldSpins     int64  `json:"gold_spins"`
 }
 
 type UserPlayer struct {

@@ -6,9 +6,9 @@ const (
 	ItemTypeChips        ItemType = 0
 	ItemTypeGold         ItemType = 1
 	ItemTypeSpin         ItemType = 2
-	ItemTypeEvent        ItemType = 3
-	ItemTypeMultiplier   ItemType = 97
-	ItemTypeGoldSpin     ItemType = 98
+	ItemTypeGoldSpin     ItemType = 3
+	ItemTypeEvent        ItemType = 4
+	ItemTypeMultiplier   ItemType = 98
 	ItemTypeBattlePassXP ItemType = 99
 )
 
@@ -19,6 +19,10 @@ type Item struct {
 }
 
 type EventItemMetadata struct {
+	EventID string `json:"event_id"`
+}
+
+type MultiplierItemMetadata struct {
 	EventID string `json:"event_id"`
 }
 

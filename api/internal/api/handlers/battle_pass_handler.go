@@ -305,14 +305,14 @@ func (h *BattlePassHandler) GetPlayerBattlePassDetails(c *gin.Context) {
 	}
 
 	// Get or create player progress
-	playerBattlePass, err := h.battlePassService.GetOrCreatePlayerBattlePass(c, playerID, battlePass.ID)
-	if err != nil {
-		InternalServerError(c, "Failed to get player battle pass")
-		return
-	}
+	// playerBattlePass, err := h.battlePassService.GetOrCreatePlayerBattlePass(c, playerID, battlePass.ID)
+	// if err != nil {
+	// 	InternalServerError(c, "Failed to get player battle pass")
+	// 	return
+	// }
 
 	// Get detailed progress
-	details, err := h.battlePassService.GetPlayerBattlePassDetails(c, playerBattlePass.ID)
+	details, err := h.battlePassService.GetPlayerBattlePassDetails(c, playerID, battlePass.ID)
 	if err != nil {
 		InternalServerError(c, "Failed to get battle pass details")
 		return

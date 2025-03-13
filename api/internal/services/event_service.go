@@ -7,6 +7,7 @@ import (
 
 	"github.com/ahmetkoprulu/rtrp/common/data"
 	"github.com/ahmetkoprulu/rtrp/internal/services/event"
+	"github.com/ahmetkoprulu/rtrp/internal/services/product"
 	"github.com/ahmetkoprulu/rtrp/models"
 	"github.com/google/uuid"
 )
@@ -20,15 +21,17 @@ var (
 )
 
 type EventService struct {
-	store       event.EventStore
-	gameFactory event.IEventGameFactory
+	store        event.EventStore
+	gameFactory  event.IEventGameFactory
+	productStore product.ProductStore
 }
 
 func NewEventService(db *data.PgDbContext) *EventService {
 
 	return &EventService{
-		store:       event.NewPgEventStore(db),
-		gameFactory: event.NewEventGameFactory(),
+		store:        event.NewPgEventStore(db),
+		productStore: product.NewPgProductStore(db),
+		gameFactory:  event.NewEventGameFactory(),
 	}
 }
 
@@ -153,6 +156,7 @@ func (s *EventService) GetOrCreatePlayerEvent(ctx context.Context, playerID, sch
 	playerEvent = &models.PlayerEvent{
 		ID:         uuid.New().String(),
 		PlayerID:   playerID,
+		EventID:    event.ID,
 		ScheduleID: scheduleID,
 		Tickets:    99999,
 		CreatedAt:  time.Now(),
@@ -234,15 +238,24 @@ func (s *EventService) PlayEvent(ctx context.Context, playerID, scheduleID strin
 		return nil, err
 	}
 
-	// Update player event state
 	if err := gameInstance.UpdateState(ctx, playerEvent, playResult); err != nil {
 		return nil, err
 	}
 
-	// Save updated player event
 	if err := s.store.UpdatePlayerEvent(ctx, playerEvent); err != nil {
 		return nil, err
 	}
+
+	rewards := gameInstance.GetRewards(playResult)
+	if err := s.productStore.GiveRewardToPlayer(ctx, rewards, playerID); err != nil {
+		return nil, err
+	}
+
+	// playerEvent, err = s.store.GetPlayerEvent(ctx, playerID, scheduleID)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// playResult.PlayerEvent = *playerEvent
 
 	return playResult, nil
 }

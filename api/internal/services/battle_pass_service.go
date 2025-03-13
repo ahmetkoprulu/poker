@@ -600,15 +600,15 @@ func (s *BattlePassService) GetPlayerClaimedRewards(ctx context.Context, playerB
 	return rewards, nil
 }
 
-func (s *BattlePassService) GetPlayerBattlePassDetails(ctx context.Context, playerBattlePassID string) (*models.BattlePassProgressDetails, error) {
+func (s *BattlePassService) GetPlayerBattlePassDetails(ctx context.Context, playerID, battlePassID string) (*models.BattlePassProgressDetails, error) {
 	// Get player progress
-	progress, err := s.GetOrCreatePlayerBattlePass(ctx, playerBattlePassID, playerBattlePassID)
+	progress, err := s.GetOrCreatePlayerBattlePass(ctx, playerID, battlePassID)
 	if err != nil {
 		return nil, err
 	}
 
 	// Get claimed rewards
-	claimedRewards, err := s.GetPlayerClaimedRewards(ctx, playerBattlePassID)
+	claimedRewards, err := s.GetPlayerClaimedRewards(ctx, progress.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -657,14 +657,13 @@ func (s *BattlePassService) GetOrCreatePlayerBattlePassDetails(ctx context.Conte
 		return nil, ErrPlayerIDRequired
 	}
 
-	// Get active battle pass
 	battlePass, err := s.GetActiveBattlePass(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	// Get detailed progress
-	details, err := s.GetPlayerBattlePassDetails(ctx, battlePass.ID)
+	details, err := s.GetPlayerBattlePassDetails(ctx, playerID, battlePass.ID)
 	if err != nil {
 		return nil, err
 	}

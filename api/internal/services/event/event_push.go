@@ -169,3 +169,7 @@ func (g *PushEvent) GetInitialState(event models.Event) map[string]interface{} {
 		LastReward:   nil,
 	})
 }
+
+func (g *PushEvent) GetRewards(eventPlayResult *models.EventPlayResult) []models.Item {
+	return eventPlayResult.Rewards
+}

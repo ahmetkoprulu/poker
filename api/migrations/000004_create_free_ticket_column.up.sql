@@ -1,0 +1,6 @@
+ALTER TABLE player_events ADD COLUMN free_tickets INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE player_events ADD COLUMN event_id VARCHAR(36) NOT NULL REFERENCES events(id);
+ALTER TABLE events ADD COLUMN general_config JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE players ADD COLUMN spins INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE players ADD COLUMN gold_spins INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE player_events ADD CONSTRAINT fk_player_events_event_id FOREIGN KEY (event_id) REFERENCES events(id);

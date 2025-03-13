@@ -3,6 +3,7 @@ package product
 import (
 	"context"
 
+	"github.com/ahmetkoprulu/rtrp/common/data"
 	"github.com/ahmetkoprulu/rtrp/models"
 )
 
@@ -14,6 +15,6 @@ const (
 
 type ProductStore interface {
 	GetProduct(ctx context.Context, id string) (*models.Product, error)
-	GiveReward(ctx context.Context, playerID string, rewards []*models.Item) error
 	GiveRewardToPlayer(ctx context.Context, items []models.Item, playerID string) error
+	GiveRewardToPlayerWithTx(ctx context.Context, tx data.QueryRunner, items []models.Item, playerID string) error
 }

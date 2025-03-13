@@ -23,6 +23,8 @@ type EventGame interface {
 	// CalculateRewards(ctx context.Context, req *models.EventPlayRequest, result *models.EventPlayResult) error
 	UpdateState(ctx context.Context, playerEvent *models.PlayerEvent, result *models.EventPlayResult) error
 	GetInitialState(event models.Event) map[string]interface{}
+	HandleMultiplier(playerEvent *models.PlayerEvent, reward models.Item) models.Item
+	GetRewards(eventPlayResult *models.EventPlayResult) []models.Item
 }
 
 type BaseEventGame struct {
@@ -34,6 +36,25 @@ func (g *BaseEventGame) Initialize(ctx context.Context, event models.Event, play
 	g.Event = &event
 	g.PlayerEvent = &playerEvent
 	return nil
+}
+
+func (g *BaseEventGame) HandleMultiplier(playerEvent *models.PlayerEvent, reward models.Item) models.Item {
+	if reward.Type != models.ItemTypeChips && reward.Type != models.ItemTypeGold && reward.Type != models.ItemTypeMultiplier {
+		return reward
+	}
+
+	if reward.Type == models.ItemTypeMultiplier {
+		playerEvent.Multiplier += reward.Amount
+	} else {
+		if playerEvent.Multiplier <= 0 {
+			return reward
+		}
+
+		reward.Amount *= playerEvent.Multiplier
+		playerEvent.Multiplier = 0
+	}
+
+	return reward
 }
 
 type IEventGameFactory interface {
