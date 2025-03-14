@@ -1,22 +1,22 @@
 package handlers
 
 import (
-	"math/rand"
-
 	"github.com/ahmetkoprulu/rtrp/internal/services"
 	"github.com/ahmetkoprulu/rtrp/models"
 	"github.com/gin-gonic/gin"
 )
 
 type PlayerHandler struct {
-	playerService  *services.PlayerService
-	productService *services.ProductService
+	playerService   *services.PlayerService
+	productService  *services.ProductService
+	miniGameService *services.MiniGameService
 }
 
-func NewPlayerHandler(playerService *services.PlayerService, productService *services.ProductService) *PlayerHandler {
+func NewPlayerHandler(playerService *services.PlayerService, productService *services.ProductService, miniGameService *services.MiniGameService) *PlayerHandler {
 	return &PlayerHandler{
-		playerService:  playerService,
-		productService: productService,
+		playerService:   playerService,
+		productService:  productService,
+		miniGameService: miniGameService,
 	}
 }
 
@@ -27,19 +27,10 @@ func (h *PlayerHandler) RegisterRoutes(router *gin.RouterGroup, authMiddleware g
 		player.PUT("/chips", serverToServerAuthMiddleware, h.IncrementChips)
 		player.POST("/free-spin-wheel", authMiddleware, h.FreeSpinWheel)
 		player.POST("/spin-wheel", authMiddleware, h.SpinWheel)
+		player.POST("/spin-slot", authMiddleware, h.SpinSlot)
 	}
 }
 
-// @Summary Get current player
-// @Description Mevcut Player'in bilgilerini almak icin kullanilir.
-// @Tags players
-// @Produce json
-// @Security Bearer
-// @Success 200 {object} models.Player
-// @Failure 400 {object} ErrorResponse "Bad request"
-// @Failure 401 {object} ErrorResponse "Unauthorized"
-// @Failure 404 {object} ErrorResponse "Player not found"
-// @Router /players/me [get]
 func (h *PlayerHandler) GetMyPlayer(c *gin.Context) {
 	userId, playerId := c.GetString("userID"), c.GetString("playerID")
 	if userId == "" || playerId == "" {
@@ -67,16 +58,6 @@ func (h *PlayerHandler) GetMyPlayer(c *gin.Context) {
 	Ok(c, player)
 }
 
-// @Summary Increment player chips
-// @Description Increment a player's chips balance (server-to-server only)
-// @Tags players
-// @Accept json
-// @Produce json
-// @Param request body IncrementChipsRequest true "Increment chips request"
-// @Success 200 {integer} int64 "Updated chips balance"
-// @Failure 400 {object} ErrorResponse "Bad request"
-// @Failure 401 {object} ErrorResponse "Unauthorized"
-// @Router /players/chips [put]
 func (h *PlayerHandler) IncrementChips(c *gin.Context) {
 	model := BindModel[IncrementChipsRequest](c)
 	if model == nil {
@@ -104,45 +85,7 @@ func (h *PlayerHandler) FreeSpinWheel(c *gin.Context) {
 		return
 	}
 
-	rewards := []models.Item{
-		{
-			Type:   models.ItemTypeChips,
-			Amount: 1000,
-		},
-		{
-			Type:   models.ItemTypeChips,
-			Amount: 1100,
-		},
-		{
-			Type:   models.ItemTypeChips,
-			Amount: 1200,
-		},
-		{
-			Type:   models.ItemTypeChips,
-			Amount: 1300,
-		},
-		{
-			Type:   models.ItemTypeChips,
-			Amount: 1400,
-		},
-		{
-			Type:   models.ItemTypeChips,
-			Amount: 1500,
-		},
-		{
-			Type:   models.ItemTypeChips,
-			Amount: 1600,
-		},
-		{
-			Type:   models.ItemTypeGold,
-			Amount: 1700,
-		},
-	}
-
-	index := rand.Intn(len(rewards))
-	reward := rewards[index]
-
-	err := h.productService.GiveRewardToPlayer(c.Request.Context(), []models.Item{reward}, playerId)
+	index, reward, err := h.miniGameService.SpinWheel(c.Request.Context(), playerId)
 	if err != nil {
 		BadRequest(c, err.Error())
 		return
@@ -150,7 +93,7 @@ func (h *PlayerHandler) FreeSpinWheel(c *gin.Context) {
 
 	Ok(c, SpinWheelResponse{
 		Index:  index,
-		Reward: reward,
+		Reward: *reward,
 	})
 }
 
@@ -161,45 +104,7 @@ func (h *PlayerHandler) SpinWheel(c *gin.Context) {
 		return
 	}
 
-	rewards := []models.Item{
-		{
-			Type:   models.ItemTypeChips,
-			Amount: 1000 * 10,
-		},
-		{
-			Type:   models.ItemTypeChips,
-			Amount: 1000 * 11,
-		},
-		{
-			Type:   models.ItemTypeChips,
-			Amount: 1000 * 12,
-		},
-		{
-			Type:   models.ItemTypeChips,
-			Amount: 1000 * 13,
-		},
-		{
-			Type:   models.ItemTypeChips,
-			Amount: 1000 * 14,
-		},
-		{
-			Type:   models.ItemTypeChips,
-			Amount: 1000 * 15,
-		},
-		{
-			Type:   models.ItemTypeChips,
-			Amount: 1000 * 16,
-		},
-		{
-			Type:   models.ItemTypeGold,
-			Amount: 1000 * 17,
-		},
-	}
-
-	index := rand.Intn(len(rewards))
-	reward := rewards[index]
-
-	err := h.productService.GiveRewardToPlayer(c.Request.Context(), []models.Item{reward}, playerId)
+	index, reward, err := h.miniGameService.SpinGoldWheel(c.Request.Context(), playerId)
 	if err != nil {
 		BadRequest(c, err.Error())
 		return
@@ -207,7 +112,31 @@ func (h *PlayerHandler) SpinWheel(c *gin.Context) {
 
 	Ok(c, SpinWheelResponse{
 		Index:  index,
-		Reward: reward,
+		Reward: *reward,
+	})
+}
+
+type SpinSlotResponse struct {
+	Index  []models.ItemType `json:"index"`
+	Reward models.Item       `json:"reward"`
+}
+
+func (h *PlayerHandler) SpinSlot(c *gin.Context) {
+	userId, playerId := c.GetString("userID"), c.GetString("playerID")
+	if userId == "" || playerId == "" {
+		BadRequest(c, "userID and playerID are required")
+		return
+	}
+
+	reward, indices, err := h.miniGameService.SpinSlot(c.Request.Context(), playerId)
+	if err != nil {
+		BadRequest(c, err.Error())
+		return
+	}
+
+	Ok(c, SpinSlotResponse{
+		Index:  indices,
+		Reward: *reward,
 	})
 }
 

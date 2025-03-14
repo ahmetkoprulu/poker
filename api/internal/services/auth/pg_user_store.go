@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -20,7 +21,7 @@ type PgUserStore struct {
 func (s *PgUserStore) GetUserByIdentifier(ctx context.Context, provider models.SocialNetwork, identifier string) (*models.User, error) {
 	var query = `
 		SELECT u.id, u.provider, u.identifier, u.password_hash, u.profile,
-			   p.id, p.username, p.profile_pic_url, p.chips
+			   p.id, p.username, p.profile_pic_url, p.chips, p.golds, p.mini_games
 		FROM users u
 		LEFT JOIN players p ON p.user_id = u.id
 		WHERE u.provider = $1 AND u.identifier = $2
@@ -31,7 +32,8 @@ func (s *PgUserStore) GetUserByIdentifier(ctx context.Context, provider models.S
 	}
 
 	var playerID, playerUsername, playerProfilePicURL *string
-	var playerChips *int64
+	var playerChips, playerGolds *int64
+	var playerMiniGames *json.RawMessage
 	err := s.Db.QueryRow(ctx, query, provider, identifier).Scan(
 		&result.ID,
 		&result.Provider,
@@ -42,6 +44,8 @@ func (s *PgUserStore) GetUserByIdentifier(ctx context.Context, provider models.S
 		&playerUsername,
 		&playerProfilePicURL,
 		&playerChips,
+		&playerGolds,
+		&playerMiniGames,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -59,6 +63,11 @@ func (s *PgUserStore) GetUserByIdentifier(ctx context.Context, provider models.S
 		result.Player.Username = *playerUsername
 		result.Player.ProfilePicURL = *playerProfilePicURL
 		result.Player.Chips = *playerChips
+		result.Player.Golds = *playerGolds
+		err = json.Unmarshal(*playerMiniGames, &result.Player.MiniGames)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return result, nil
@@ -67,7 +76,7 @@ func (s *PgUserStore) GetUserByIdentifier(ctx context.Context, provider models.S
 func (s *PgUserStore) GetUserByID(ctx context.Context, id string) (*models.User, error) {
 	var query = `
 		SELECT u.id, u.provider, u.identifier, u.password_hash, u.profile,
-			   p.id, p.username, p.profile_pic_url, p.chips
+			   p.id, p.username, p.profile_pic_url, p.chips, p.golds, p.mini_games
 		FROM users u
 		LEFT JOIN players p ON p.user_id = u.id
 		WHERE u.id = $1
@@ -77,7 +86,8 @@ func (s *PgUserStore) GetUserByID(ctx context.Context, id string) (*models.User,
 	}
 
 	var playerID, playerUsername, playerProfilePicURL *string
-	var playerChips *int64
+	var playerChips, playerGolds *int64
+	var playerMiniGames *json.RawMessage
 	err := s.Db.QueryRow(ctx, query, id).Scan(
 		&result.ID,
 		&result.Provider,
@@ -88,6 +98,8 @@ func (s *PgUserStore) GetUserByID(ctx context.Context, id string) (*models.User,
 		&playerUsername,
 		&playerProfilePicURL,
 		&playerChips,
+		&playerGolds,
+		&playerMiniGames,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -105,6 +117,11 @@ func (s *PgUserStore) GetUserByID(ctx context.Context, id string) (*models.User,
 		result.Player.Username = *playerUsername
 		result.Player.ProfilePicURL = *playerProfilePicURL
 		result.Player.Chips = *playerChips
+		result.Player.Golds = *playerGolds
+		err = json.Unmarshal(*playerMiniGames, &result.Player.MiniGames)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return result, nil
@@ -151,11 +168,11 @@ func (s *PgUserStore) CreatePlayer(ctx context.Context, player *models.Player) (
 	}
 
 	query := `
-		INSERT INTO players (id, user_id, username, profile_pic_url, chips)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO players (id, user_id, username, profile_pic_url, chips, golds, mini_games)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`
 
-	_, err := s.Db.Exec(ctx, query, player.ID, player.UserID, player.Username, player.ProfilePicURL, player.Chips)
+	_, err := s.Db.Exec(ctx, query, player.ID, player.UserID, player.Username, player.ProfilePicURL, player.Chips, player.Golds, player.MiniGames)
 	if err != nil {
 		return nil, err
 	}

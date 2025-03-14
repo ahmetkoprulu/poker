@@ -2,6 +2,7 @@ package models
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 	"golang.org/x/exp/rand"
@@ -23,14 +24,21 @@ type Profile struct {
 }
 
 type Player struct {
-	ID            string `json:"id"`
-	Username      string `json:"username"`
-	ProfilePicURL string `json:"profile_pic_url"`
-	UserID        string `json:"-"`
-	Chips         int64  `json:"chips"`
-	Golds         int64  `json:"golds"`
-	Spins         int64  `json:"spins"`
-	GoldSpins     int64  `json:"gold_spins"`
+	ID            string          `json:"id"`
+	Username      string          `json:"username"`
+	ProfilePicURL string          `json:"profile_pic_url"`
+	UserID        string          `json:"-"`
+	Chips         int64           `json:"chips"`
+	Golds         int64           `json:"golds"`
+	MiniGames     PlayerMiniGames `json:"mini_games"`
+}
+
+type PlayerMiniGames struct {
+	Wheels            int       `json:"wheels"`
+	LastWheelPlayedAt time.Time `json:"last_wheel_played_at"`
+	GoldWheels        int       `json:"gold_wheels"`
+	Slots             int       `json:"slots"`
+	LastSlotPlayedAt  time.Time `json:"last_slot_played_at"`
 }
 
 type UserPlayer struct {

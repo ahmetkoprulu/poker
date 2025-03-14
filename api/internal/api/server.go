@@ -16,13 +16,15 @@ import (
 )
 
 type Server struct {
-	router        *gin.Engine
-	httpServer    *http.Server
-	authService   *services.AuthService
-	playerService *services.PlayerService
-	eventService  *services.EventService
-	lobbyService  *services.LobbyService
-	db            *data.PgDbContext
+	router              *gin.Engine
+	httpServer          *http.Server
+	authService         *services.AuthService
+	playerService       *services.PlayerService
+	eventService        *services.EventService
+	lobbyService        *services.LobbyService
+	remoteConfigService *services.RemoteConfigService
+	db                  *data.PgDbContext
+	miniGameService     *services.MiniGameService
 }
 
 func NewServer(db *data.PgDbContext) *Server {
@@ -32,14 +34,18 @@ func NewServer(db *data.PgDbContext) *Server {
 	productService := services.NewProductService(db)
 	battlePassService := services.NewBattlePassService(db, productService)
 	lobbyService := services.NewLobbyService(db, playerService, eventService, battlePassService)
+	remoteConfigService := services.NewRemoteConfigService(db)
+	miniGameService := services.NewMiniGameService(playerService, productService)
 
 	server := &Server{
-		router:        gin.Default(),
-		authService:   authService,
-		playerService: playerService,
-		eventService:  eventService,
-		lobbyService:  lobbyService,
-		db:            db,
+		router:              gin.Default(),
+		authService:         authService,
+		playerService:       playerService,
+		eventService:        eventService,
+		lobbyService:        lobbyService,
+		db:                  db,
+		remoteConfigService: remoteConfigService,
+		miniGameService:     miniGameService,
 	}
 
 	server.router.Use(middleware.RequestLogger())
@@ -49,11 +55,13 @@ func NewServer(db *data.PgDbContext) *Server {
 	server.router.Use(middleware.StaticFileMiddleware())
 
 	authHandler := handlers.NewAuthHandler(authService)
-	playerHandler := handlers.NewPlayerHandler(playerService, productService)
+	playerHandler := handlers.NewPlayerHandler(playerService, productService, miniGameService)
 	eventHandler := handlers.NewEventHandler(eventService)
 	healthHandler := handlers.NewHealthHandler()
 	battlePassHandler := handlers.NewBattlePassHandler(battlePassService)
 	lobbyHandler := handlers.NewLobbyHandler(lobbyService)
+	remoteConfigHandler := handlers.NewRemoteConfigHandler(remoteConfigService)
+
 	authMiddleware := middleware.AuthMiddleware()
 	serverToServerAuthMiddleware := middleware.ServerToServerAuthMiddleware()
 
@@ -66,6 +74,7 @@ func NewServer(db *data.PgDbContext) *Server {
 		eventHandler.RegisterRoutes(v1, authMiddleware)
 		battlePassHandler.RegisterRoutes(v1, authMiddleware)
 		lobbyHandler.RegisterRoutes(v1, authMiddleware)
+		remoteConfigHandler.RegisterRoutes(v1)
 		// Protected routes
 		// protected := v1.Group("", authMiddleware)
 		// {

@@ -32,11 +32,11 @@ import (
 	"github.com/ahmetkoprulu/rtrp/common/data"
 	"github.com/ahmetkoprulu/rtrp/common/utils"
 	"github.com/ahmetkoprulu/rtrp/internal/api"
-	"github.com/ahmetkoprulu/rtrp/internal/config"
+	cfg "github.com/ahmetkoprulu/rtrp/internal/config"
 )
 
 func main() {
-	config := config.LoadEnvironment()
+	config := cfg.LoadEnvironment()
 	fmt.Println(config)
 
 	utils.InitLogger()
@@ -53,6 +53,11 @@ func main() {
 		utils.Logger.Fatal("Failed to connect to database", utils.Logger.String("error", err.Error()))
 	}
 	defer db.Close()
+
+	err = cfg.LoadGameConfig(db)
+	if err != nil {
+		utils.Logger.Fatal("Failed to load game config", utils.Logger.String("error", err.Error()))
+	}
 
 	// redis, err := cache.NewRedisCache(config.CacheURL, 0)
 	// if err != nil {

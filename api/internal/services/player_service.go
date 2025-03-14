@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/ahmetkoprulu/rtrp/common/data"
@@ -46,13 +47,14 @@ func (s *PlayerService) IncrementChips(ctx context.Context, id string, amount in
 
 func (s *PlayerService) getPlayerByID(ctx context.Context, playerID string) (*models.Player, error) {
 	var query = `
-		SELECT id, user_id, username, profile_pic_url, chips
+		SELECT id, user_id, username, profile_pic_url, chips, golds, mini_games
 		FROM players
 		WHERE id = $1
 	`
 
 	var player models.Player
-	err := s.db.QueryRow(ctx, query, playerID).Scan(&player.ID, &player.UserID, &player.Username, &player.ProfilePicURL, &player.Chips)
+	var miniGamesBytes []byte
+	err := s.db.QueryRow(ctx, query, playerID).Scan(&player.ID, &player.UserID, &player.Username, &player.ProfilePicURL, &player.Chips, &player.Golds, &miniGamesBytes)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, nil
@@ -60,5 +62,37 @@ func (s *PlayerService) getPlayerByID(ctx context.Context, playerID string) (*mo
 		return nil, err
 	}
 
+	err = json.Unmarshal(miniGamesBytes, &player.MiniGames)
+	if err != nil {
+		return nil, err
+	}
+
 	return &player, nil
+}
+
+func (s *PlayerService) DecrementMiniGamePoints(ctx context.Context, playerID string, miniGameName, dateColumn string) error {
+	if playerID == "" {
+		return fmt.Errorf("player id is required")
+	}
+
+	query := `
+		UPDATE players
+		SET mini_games = jsonb_set(
+			jsonb_set(
+				mini_games,
+				ARRAY[$2],
+				to_jsonb(COALESCE((mini_games->$2)::int, 1) - 1)
+			),
+			ARRAY[$3],
+			to_jsonb(CURRENT_TIMESTAMP)
+		)
+		WHERE id = $1
+	`
+
+	_, err := s.db.Exec(ctx, query, playerID, miniGameName, dateColumn)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
