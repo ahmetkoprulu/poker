@@ -56,6 +56,8 @@ func (r *Room) AddPlayer(player *Client) error {
 	}
 
 	r.Players[player.User.Player.ID] = player
+	player.CurrentRoom = r
+
 	return nil
 }
 
@@ -63,7 +65,10 @@ func (r *Room) RemovePlayer(playerID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.Game.RemovePlayer(playerID)
+	if r.Game != nil {
+		r.Game.RemovePlayer(playerID)
+	}
+
 	delete(r.Players, playerID)
 	return nil
 }
@@ -79,9 +84,9 @@ func (r *Room) GetRoomState() RoomState {
 	defer r.mu.Unlock()
 
 	players := make([]*Client, 0, len(r.Players))
-	for _, player := range r.Players {
-		players = append(players, player)
-	}
+	// for _, player := range r.Players {
+	// 	players = append(players, player)
+	// }
 
 	return RoomState{
 		RoomID:     r.ID,

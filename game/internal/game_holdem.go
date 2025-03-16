@@ -7,7 +7,9 @@ import (
 	"log"
 	"math"
 	"math/rand"
+	"slices"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/ahmetkoprulu/rtrp/game/models"
@@ -69,6 +71,8 @@ type Holdem struct {
 	actionsChannel chan GameAction
 	messageChannel chan GameMessage
 	doneChannel    chan bool
+
+	Mu sync.RWMutex
 }
 
 type HoldemAction struct {
@@ -151,8 +155,8 @@ type HoldemPlayerTurnMessage struct {
 func NewHoldem(game *Game) *Holdem {
 	return &Holdem{
 		State: HoldemState{
-			SmallBlindAmount: 5,
-			BigBlindAmount:   10,
+			SmallBlindAmount: 0,
+			BigBlindAmount:   0,
 			CurrentRound:     PreFlop,
 			Pot:              0,
 			CurrentBet:       0,
@@ -173,7 +177,31 @@ func NewHoldem(game *Game) *Holdem {
 		doneChannel:    make(chan bool),
 		deck:           models.NewDeck(),
 		game:           game,
+		Mu:             sync.RWMutex{},
 	}
+}
+
+func (h *Holdem) RefreshState() {
+	// h.game.Mu.Lock()
+	// defer h.game.Mu.Unlock()
+
+	h.State.SmallBlindAmount = 0
+	h.State.BigBlindAmount = 0
+	h.State.CurrentRound = PreFlop
+	h.State.Pot = 0
+	h.State.CurrentBet = 0
+	h.State.RoundComplete = false
+
+	h.State.DealerSeat = nil
+	h.State.CurrentSeat = nil
+	h.State.SmallBlindSeat = nil
+	h.State.BigBlindSeat = nil
+	h.State.LastRaiserSeat = nil
+
+	h.State.PlayerBets = make(map[string]int)
+	h.State.Seats = make(map[int]*TableSeat)
+	h.State.PlayerLastAction = make(map[string]HoldemActionType)
+	h.State.CommunityCards = make([]models.Card, 0)
 }
 
 func (h *Holdem) ProcessAction(msg json.RawMessage) error {
@@ -398,8 +426,6 @@ func (h *Holdem) PlayRound() {
 	} else {
 		h.End()
 	}
-
-	h.LogGameState("HAND COMPLETE")
 }
 
 func (h *Holdem) StartPreFlopRound() {
@@ -414,13 +440,11 @@ func (h *Holdem) StartPreFlopRound() {
 	h.RotateDealerButton()
 	if !h.SetBlindPositions() {
 		log.Printf("[ERROR] Not enough players to set blind positions")
-		h.End()
 		return
 	}
 
 	if err := h.DealCards(); err != nil {
 		log.Printf("[ERROR] Failed to deal cards: %v", err)
-		h.End()
 		return
 	}
 
@@ -549,10 +573,6 @@ func (h *Holdem) BettingRound() error {
 				actionReceived <- true
 			}
 		}()
-
-		if !h.CanGameContinue() {
-			return errors.New("not enough players to continue game")
-		}
 
 		<-actionReceived
 		timer.Stop()
@@ -699,22 +719,26 @@ func (h *Holdem) DealCommunityCards() error {
 func (h *Holdem) HandlePlayers() {
 	h.game.Mu.Lock()
 	defer h.game.Mu.Unlock()
-	for _, player := range h.game.Players {
-		if player.Status == GamePlayerStatusInactive || player.Balance < h.game.MinBet {
-			continue
-		}
 
+	h.game.Players = slices.DeleteFunc(h.game.Players, func(p *GamePlayer) bool {
+		return p.Status == GamePlayerStatusInactive || p.Balance < h.game.MinBet
+	})
+
+	for _, player := range h.game.Players {
 		if player.Status == GamePlayerStatusWaiting {
 			player.Status = GamePlayerStatusActive
 		}
+
 		_, ok := h.State.Seats[player.Position]
 		if !ok {
 			h.State.Seats[player.Position] = &TableSeat{
 				Position: player.Position,
 				Player:   player,
-				Hand:     make([]models.Card, 0, 2),
 			}
 		}
+
+		h.State.Seats[player.Position].Hand = make([]models.Card, 0, 2)
+
 	}
 
 	h.LinkSeats()
@@ -819,7 +843,7 @@ func (h *Holdem) Start() error {
 		return errors.New("not enough players to start")
 	}
 
-	h.game.Status = GameStatusStarted
+	h.game.Status = GameStatusStarting
 	h.State.DealerSeat = nil
 	log.Printf("[INFO] Starting holdem game")
 
@@ -829,22 +853,32 @@ func (h *Holdem) Start() error {
 		}
 	}
 
+	h.RefreshState()
 	go h.StartMessageChannel()
 
 	h.LogGameState("GAME STARTING")
 	h.SendMessage(HoldemMessageGameStart, h.GetGameState())
 
+	h.game.Status = GameStatusStarted
 	go h.PlayRound()
 
 	return nil
 }
 
 func (h *Holdem) End() error {
-	h.game.Status = GameStatusEnd
+	h.game.Mu.Lock()
+	defer h.game.Mu.Unlock()
+
+	h.game.Players = slices.DeleteFunc(h.game.Players, func(p *GamePlayer) bool {
+		return p.Status == GamePlayerStatusInactive || p.Balance < h.game.MinBet
+	})
+
+	h.game.Status = GameStatusWaiting
 	log.Printf("[INFO] Ending holdem game")
 
 	h.LogGameState("GAME ENDED")
 	h.SendMessage(HoldemMessageGameEnd, h.GetGameState())
+	time.Sleep(100 * time.Millisecond)
 	h.doneChannel <- true
 
 	return nil
@@ -887,7 +921,7 @@ func (h *Holdem) OnPlayerJoin(player *GamePlayer) error {
 }
 
 func (h *Holdem) OnPlayerLeave(player *GamePlayer) error {
-	player.Status = GamePlayerStatusInactive
+	// player.Status = GamePlayerStatusInactive
 	log.Printf("[INFO] Player %s left the game", player.Client.User.Player.ID)
 
 	return nil
@@ -935,7 +969,7 @@ func (h *Holdem) EvaluateHands() error {
 	startPos := currentSeat.Position
 
 	for {
-		if currentSeat.Hand != nil && len(currentSeat.Hand) > 0 {
+		if currentSeat.Hand != nil && len(currentSeat.Hand) > 0 && currentSeat.Player.Status != GamePlayerStatusInactive {
 			activePlayers = append(activePlayers, currentSeat)
 		}
 		currentSeat = currentSeat.Next
@@ -1366,24 +1400,22 @@ func (h *Holdem) SendMessageToPlayer(playerID string, msgType HoldemMessageType,
 }
 
 func (h *Holdem) StartMessageChannel() {
-	go func() {
-		for {
-			select {
-			case msg := <-h.messageChannel:
-				if msg.ToGame {
-					h.game.Room.SendMessageToRoom(msg)
-				} else if msg.PlayerID == "" {
-					h.game.Room.SendMessageToPlayer(msg.PlayerID, msg)
-				} else {
-					h.game.Room.SendMessageToRoom(msg)
-				}
-			case <-h.doneChannel:
-				return
-			default:
-				time.Sleep(100 * time.Millisecond)
+	for {
+		select {
+		case msg := <-h.messageChannel:
+			if msg.ToGame {
+				h.game.Room.SendMessageToRoom(msg)
+			} else if msg.PlayerID == "" {
+				h.game.Room.SendMessageToPlayer(msg.PlayerID, msg)
+			} else {
+				h.game.Room.SendMessageToRoom(msg)
 			}
+		case <-h.doneChannel:
+			return
+		default:
+			time.Sleep(100 * time.Millisecond)
 		}
-	}()
+	}
 }
 
 func (h *Holdem) GetPlayersInRound() []*GamePlayer {
@@ -1458,7 +1490,7 @@ func (h *Holdem) GetGameState() interface{} {
 		}
 
 		seat, ok := h.State.Seats[player.Position]
-		if !ok {
+		if !ok || h.game.Status != GameStatusStarted || h.State.DealerSeat == nil {
 			playerViews = append(playerViews, playerView)
 			continue
 		}
@@ -1536,6 +1568,9 @@ func (h *Holdem) LogGameState(message string) {
 				status = "Folded"
 			} else if player.Balance == 0 {
 				status = "All-In"
+			}
+			if h.game.Status != GameStatusStarted || h.State.DealerSeat == nil {
+				continue
 			}
 
 			position := ""

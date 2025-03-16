@@ -5,8 +5,6 @@ import (
 	"errors"
 	"sync"
 
-	"slices"
-
 	"github.com/google/uuid"
 )
 
@@ -26,6 +24,7 @@ const (
 	GamePlayerStatusWaiting  GamePlayerStatus = "waiting"
 	GamePlayerStatusActive   GamePlayerStatus = "active"
 	GamePlayerStatusInactive GamePlayerStatus = "inactive"
+	GamePlayerStatusFolded   GamePlayerStatus = "folded"
 )
 
 type GameActionType string
@@ -165,15 +164,20 @@ func (g *Game) AddPlayer(position int, player *Client) error {
 
 	gamePlayer.Status = GamePlayerStatusWaiting
 	g.Players = append(g.Players, gamePlayer)
+	player.CurrentGame = g
 	g.Playable.OnPlayerJoin(gamePlayer)
 
 	return nil
 }
 
 func (g *Game) RemovePlayer(playerID string) error {
-	for i, p := range g.Players {
+	g.Mu.Lock()
+	defer g.Mu.Unlock()
+
+	for _, p := range g.Players {
 		if p.Client.User.Player.ID == playerID {
-			g.Players = slices.Delete(g.Players, i, i+1)
+			// g.Players = slices.Delete(g.Players, i, i+1)
+			p.Status = GamePlayerStatusInactive
 			g.Playable.OnPlayerLeave(p)
 			return nil
 		}

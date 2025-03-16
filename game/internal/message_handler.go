@@ -77,22 +77,22 @@ func (h *MessageHandler) HandleMessage(client *Client, message []byte) error {
 }
 
 func (h *MessageHandler) handleRoomInfo(client *Client, message models.MessageRoomInfo) error {
-	room := h.server.GetRoom(message.RoomID)
-	if room == nil {
-		return h.sendError(client, "Room not found")
-	}
+	// room := h.server.GetRoom(message.RoomID)
+	// if room == nil {
+	// 	return h.sendError(client, "Room not found")
+	// }
 
-	response := models.Response{
-		Type: models.MessageTypeRoomInfo,
-		Data: room,
-	}
+	// response := models.Response{
+	// 	Type: models.MessageTypeRoomInfo,
+	// 	Data: room,
+	// }
 
-	msgBytes, err := json.Marshal(response)
-	if err != nil {
-		return err
-	}
+	// msgBytes, err := json.Marshal(response)
+	// if err != nil {
+	// 	return err
+	// }
 
-	client.send <- msgBytes
+	// client.send <- msgBytes
 	return nil
 }
 

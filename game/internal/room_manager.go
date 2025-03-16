@@ -145,10 +145,10 @@ func (rm *RoomManager) StartGame(roomID string) error {
 	}
 
 	log.Printf("[INFO] Attempting to start game - RoomID: %s, PlayerCount: %d, Status: %s", roomID, len(room.Game.Players), room.Game.Status)
-	if err := room.Game.Playable.Start(); err != nil {
-		log.Printf("[ERROR] Failed to start new hand - RoomID: %s, Error: %s", roomID, err)
-		return err
-	}
+	// if err := room.Game.Playable.Start(); err != nil {
+	// 	log.Printf("[ERROR] Failed to start new hand - RoomID: %s, Error: %s", roomID, err)
+	// 	return err
+	// }
 
 	log.Printf("[INFO] Game started successfully - RoomID: %s, PlayerCount: %d", roomID, len(room.Game.Players))
 	return nil

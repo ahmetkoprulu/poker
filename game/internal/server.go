@@ -64,6 +64,9 @@ func (s *Server) Run() {
 		case client := <-s.unregister:
 			if _, ok := s.clients[client.User.Player.ID]; ok {
 				s.mu.Lock()
+				if client.CurrentRoom != nil {
+					client.CurrentRoom.RemovePlayer(client.User.Player.ID)
+				}
 				delete(s.clients, client.User.Player.ID)
 				close(client.send)
 				s.mu.Unlock()
