@@ -3,8 +3,10 @@ package internal
 import (
 	"encoding/json"
 	"errors"
-	"log"
+	"fmt"
 	"sync"
+
+	"github.com/ahmetkoprulu/rtrp/game/models"
 )
 
 var (
@@ -19,16 +21,16 @@ const (
 )
 
 type Room struct {
-	ID             string             `json:"id"`
-	Name           string             `json:"name"`
-	Status         RoomStatus         `json:"status"`
-	Game           *Game              `json:"game"`
-	MaxPlayers     int                `json:"max_players"`
-	MinBet         int                `json:"min_bet"`
-	Players        map[string]*Client `json:"players"`
-	ActionChannel  chan GameAction    `json:"-"`
-	MessageChannel chan GameMessage   `json:"-"`
-	mu             sync.Mutex         `json:"-"`
+	ID             string               `json:"id"`
+	Name           string               `json:"name"`
+	Status         RoomStatus           `json:"status"`
+	Game           *Game                `json:"game"`
+	MaxPlayers     int                  `json:"max_players"`
+	MinBet         int                  `json:"min_bet"`
+	Players        map[string]*Client   `json:"players"`
+	ActionChannel  chan GameAction      `json:"-"`
+	MessageChannel chan models.Response `json:"-"`
+	mu             sync.Mutex           `json:"-"`
 }
 
 func NewRoom(id, name string, maxPlayers int, minBet int, gameType GameType) *Room {
@@ -40,7 +42,7 @@ func NewRoom(id, name string, maxPlayers int, minBet int, gameType GameType) *Ro
 		MinBet:         minBet,
 		Players:        make(map[string]*Client),
 		ActionChannel:  make(chan GameAction),
-		MessageChannel: make(chan GameMessage, 100),
+		MessageChannel: make(chan models.Response, 100),
 		mu:             sync.Mutex{},
 	}
 
@@ -83,59 +85,117 @@ func (r *Room) GetRoomState() RoomState {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	players := make([]*Client, 0, len(r.Players))
-	// for _, player := range r.Players {
-	// 	players = append(players, player)
-	// }
-
 	return RoomState{
 		RoomID:     r.ID,
 		Status:     r.Status,
-		Players:    players,
+		Players:    r.GetPlayersState(),
 		MaxPlayers: r.MaxPlayers,
 		MinBet:     r.MinBet,
+		GameType:   r.Game.GameType,
+		GameStatus: r.Game.Status,
 		GameState:  gameState,
 	}
 }
 
-func (r *Room) SendMessageToPlayer(playerID string, message GameMessage) {
+func (r *Room) GetPlayersState() []*models.Player {
+	players := make([]*models.Player, 0, len(r.Players))
+	for _, player := range r.Players {
+		players = append(players, player.User.Player)
+	}
+
+	return players
+}
+
+func (r *Room) GetRoomSummary() *RoomSummary {
+	return &RoomSummary{
+		Id:             r.ID,
+		Status:         r.Status,
+		MaxRoomPlayers: r.MaxPlayers,
+		PlayersInRoom:  len(r.Players),
+		GameStatus:     r.Game.Status,
+		GameType:       r.Game.GameType,
+		MinBet:         r.MinBet,
+		MaxGamePlayers: r.Game.MaxPlayers,
+		PlayersInGame:  len(r.Game.Players),
+	}
+}
+
+func (r *Room) BroadcastToPlayer(playerID string, response models.Response) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	client, ok := r.Players[playerID]
 	if !ok {
-		return
+		return fmt.Errorf("player not found")
 	}
 
-	msg, err := json.Marshal(message)
+	msg, err := json.Marshal(response)
 	if err != nil {
-		log.Printf("Error marshalling message: %v", err)
-		return
+		return fmt.Errorf("error marshalling message: %v", err)
 	}
 
 	client.send <- msg
+	return nil
 }
 
-func (r *Room) SendMessageToRoom(message GameMessage) {
+func (r *Room) BroadcastToOthers(playerID string, response models.Response) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for _, p := range r.Players {
-		msg, err := json.Marshal(message)
-		if err != nil {
-			log.Printf("Error marshalling message: %v", err)
-			continue
-		}
+	msg, err := json.Marshal(response)
+	if err != nil {
+		return fmt.Errorf("error marshalling message: %v", err)
+	}
 
+	for _, p := range r.Players {
+		if p.User.Player.ID != playerID {
+			p.send <- msg
+		}
+	}
+
+	return nil
+}
+
+func (r *Room) BroadcastToRoom(response models.Response) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	msg, err := json.Marshal(response)
+	if err != nil {
+		return fmt.Errorf("error marshalling message: %v", err)
+	}
+
+	for _, p := range r.Players {
 		p.send <- msg
 	}
+
+	return nil
 }
 
 type RoomState struct {
-	RoomID     string     `json:"room_id"`
-	Status     RoomStatus `json:"status"`
-	MaxPlayers int        `json:"max_players"`
-	MinBet     int        `json:"min_bet"`
-	Players    []*Client  `json:"players"`
-	GameState  GameState  `json:"game_state"`
+	RoomID     string           `json:"room_id"`
+	Status     RoomStatus       `json:"status"`
+	MaxPlayers int              `json:"max_players"`
+	Players    []*models.Player `json:"players"`
+	MinBet     int              `json:"min_bet"`
+	GameType   GameType         `json:"game_type"`
+	GameStatus GameStatus       `json:"game_status"`
+	GameState  any              `json:"game_state"`
+}
+
+type RoomSummary struct {
+	Id             string     `json:"id"`
+	Status         RoomStatus `json:"status"`
+	MaxRoomPlayers int        `json:"max_room_players"`
+	PlayersInRoom  int        `json:"players_in_room"`
+	GameStatus     GameStatus `json:"game_status"`
+	GameType       GameType   `json:"game_type"`
+	MinBet         int        `json:"min_bet"`
+	MaxGamePlayers int        `json:"max_game_players"`
+	PlayersInGame  int        `json:"players_in_game"`
+}
+
+type RoomJoinOkResponse struct {
+	RoomID string         `json:"room_id"`
+	Player *models.Player `json:"player"`
 }

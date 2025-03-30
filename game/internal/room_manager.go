@@ -27,14 +27,14 @@ func (rm *RoomManager) CreateRoom(id, name string, maxPlayers, maxGamePlayers, m
 		room.Game = NewGame(room.ActionChannel, room.MessageChannel, room, maxGamePlayers, minBet, gameType)
 		room.Game.Playable = NewHoldem(room.Game)
 	default:
-		return nil, fmt.Errorf("unsupported game type: %s", gameType)
+		return nil, fmt.Errorf("unsupported game type: %d", gameType)
 	}
 
 	rm.mu.Lock()
 	rm.rooms[room.ID] = room
 	rm.mu.Unlock()
 
-	log.Printf("[INFO] Room created - RoomID: %s, MaxPlayers: %d, MaxGamePlayers: %d, MinBet: %d, GameType: %s", room.ID, room.MaxPlayers, room.Game.MaxPlayers, room.MinBet, room.Game.GameType)
+	log.Printf("[INFO] Room created - RoomID: %s, MaxPlayers: %d, MaxGamePlayers: %d, MinBet: %d, GameType: %d", room.ID, room.MaxPlayers, room.Game.MaxPlayers, room.MinBet, room.Game.GameType)
 
 	return room, nil
 }
@@ -62,6 +62,20 @@ func (rm *RoomManager) GetRoom(roomID string) (*Room, error) {
 	}
 
 	return room, nil
+}
+
+func (rm *RoomManager) GetRoomsByGameType(gameType GameType) []*RoomSummary {
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+
+	rooms := make([]*RoomSummary, 0, len(rm.rooms))
+	for _, room := range rm.rooms {
+		if room.Game.GameType == gameType {
+			rooms = append(rooms, room.GetRoomSummary())
+		}
+	}
+
+	return rooms
 }
 
 func (rm *RoomManager) GetRoomByPlayerID(playerID string) (*Room, error) {

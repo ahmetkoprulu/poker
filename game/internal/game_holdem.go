@@ -15,32 +15,28 @@ import (
 	"github.com/ahmetkoprulu/rtrp/game/models"
 )
 
-type HoldemActionType string
+type HoldemActionType int
 
 const (
-	HoldemActionStart      HoldemActionType = "join"
-	HoldemActionFold       HoldemActionType = "fold"
-	HoldemActionCall       HoldemActionType = "call"
-	HoldemActionRaise      HoldemActionType = "raise"
-	HoldemActionBet        HoldemActionType = "bet"
-	HoldemActionCheck      HoldemActionType = "check"
-	HoldemActionAllIn      HoldemActionType = "allIn"
-	HoldemActionSmallBlind HoldemActionType = "smallBlind"
-	HoldemActionBigBlind   HoldemActionType = "bigBlind"
-	HoldemActionNewRound   HoldemActionType = "newRound"
+	HoldemActionFold HoldemActionType = iota
+	HoldemActionCall
+	HoldemActionRaise
+	HoldemActionBet
+	HoldemActionCheck
+	HoldemActionAllIn
 )
 
-type HoldemMessageType string
+type HoldemMessageType int
 
 const (
-	HoldemMessageGameStart    HoldemMessageType = "game_start"
-	HoldemMessageGameEnd      HoldemMessageType = "game_end"
-	HoldemMessageRoundStart   HoldemMessageType = "round_start"
-	HoldemMessageRoundEnd     HoldemMessageType = "round_end"
-	HoldemMessagePlayerTurn   HoldemMessageType = "player_turn"
-	HoldemMessagePlayerAction HoldemMessageType = "player_action"
-	HoldemMessageShowdown     HoldemMessageType = "showdown"
-	HoldemMessageWinner       HoldemMessageType = "winner"
+	HoldemMessageGameStart HoldemMessageType = iota
+	HoldemMessageGameEnd
+	HoldemMessageRoundStart
+	HoldemMessageRoundEnd
+	HoldemMessagePlayerTurn
+	HoldemMessagePlayerAction
+	HoldemMessageShowdown
+	HoldemMessageWinner
 )
 
 type HandRank int
@@ -58,27 +54,15 @@ const (
 	RoyalFlush
 )
 
-type HoldemMessage struct {
-	Type      HoldemMessageType `json:"type"`
-	Data      interface{}       `json:"data"`
-	Timestamp int64             `json:"timestamp"`
-}
-
 type Holdem struct {
 	State          HoldemState
 	deck           *models.Deck
 	game           *Game
 	actionsChannel chan GameAction
-	messageChannel chan GameMessage
+	messageChannel chan models.Response
 	doneChannel    chan bool
 
 	Mu sync.RWMutex
-}
-
-type HoldemAction struct {
-	PlayerID string           `json:"playerId"`
-	Action   HoldemActionType `json:"action"`
-	Amount   int              `json:"amount"`
 }
 
 type HoldemState struct {
@@ -128,11 +112,16 @@ const (
 	Showdown
 )
 
-type HoldemPlayerActionMessage struct {
-	PlayerID  string           `json:"player_id"`
-	Action    HoldemActionType `json:"action"`
-	Amount    int              `json:"amount"`
-	GameState interface{}      `json:"game_state"`
+type HoldemMessage struct {
+	Type      HoldemMessageType `json:"type"`
+	Data      interface{}       `json:"data"`
+	Timestamp int64             `json:"timestamp"`
+}
+
+type HoldemActionMessage struct {
+	PlayerID string           `json:"playerId"`
+	Action   HoldemActionType `json:"action"`
+	Amount   int              `json:"amount"`
 }
 
 type HoldemWinnerMessage struct {
@@ -148,8 +137,8 @@ type HoldemShowdownMessage struct {
 }
 
 type HoldemPlayerTurnMessage struct {
-	GameState interface{} `json:"game_state"`
-	Timeout   int         `json:"timeout"`
+	PlayerID string `json:"player_id"`
+	Timeout  int    `json:"timeout"`
 }
 
 func NewHoldem(game *Game) *Holdem {
@@ -205,7 +194,7 @@ func (h *Holdem) RefreshState() {
 }
 
 func (h *Holdem) ProcessAction(msg json.RawMessage) error {
-	var action HoldemAction
+	var action HoldemActionMessage
 	if err := json.Unmarshal(msg, &action); err != nil {
 		return err
 	}
@@ -309,14 +298,13 @@ func (h *Holdem) ProcessAction(msg json.RawMessage) error {
 		log.Printf("[INFO] Player %s goes all-in with %d", player.Client.User.Player.ID, allInAmount)
 	}
 
-	h.SendMessage(HoldemMessagePlayerAction, HoldemPlayerActionMessage{
-		PlayerID:  player.Client.User.Player.ID,
-		Action:    action.Action,
-		Amount:    action.Amount,
-		GameState: h.GetGameState(),
+	h.SendMessage(HoldemMessagePlayerAction, HoldemActionMessage{
+		PlayerID: player.Client.User.Player.ID,
+		Action:   action.Action,
+		Amount:   action.Amount,
 	})
 
-	h.LogGameState(fmt.Sprintf("AFTER %s ACTION BY %s", action.Action, player.Client.User.Player.ID))
+	h.LogGameState(fmt.Sprintf("AFTER %d ACTION BY %s", action.Action, player.Client.User.Player.ID))
 
 	return nil
 }
@@ -541,9 +529,9 @@ func (h *Holdem) BettingRound() error {
 			continue
 		}
 
-		h.SendMessageToPlayer(player.Client.User.Player.ID, HoldemMessagePlayerTurn, HoldemPlayerTurnMessage{
-			GameState: h.GetGameState(),
-			Timeout:   10, // 5 seconds timeout for action
+		h.SendMessage(HoldemMessagePlayerTurn, HoldemPlayerTurnMessage{
+			PlayerID: player.Client.User.Player.ID,
+			Timeout:  10, // 10 seconds timeout for action
 		})
 
 		playerBet := h.State.PlayerBets[player.Client.User.Player.ID]
@@ -558,7 +546,7 @@ func (h *Holdem) BettingRound() error {
 				if action.PlayerID == player.Client.User.Player.ID {
 					if err := h.ProcessAction(action.Data); err != nil {
 						log.Printf("[ERROR] Failed to process action: %v", err)
-						fold := HoldemAction{
+						fold := HoldemActionMessage{
 							PlayerID: player.Client.User.Player.ID,
 							Action:   HoldemActionFold,
 						}
@@ -592,28 +580,28 @@ func (h *Holdem) BettingRound() error {
 }
 
 func (h *Holdem) handleTimeoutAction(player *GamePlayer, toCall int) {
-	var autoAction HoldemAction
+	var autoAction HoldemActionMessage
 	random := rand.Intn(100)
 
 	if toCall > 0 && toCall <= player.Balance {
-		autoAction = HoldemAction{
+		autoAction = HoldemActionMessage{
 			PlayerID: player.Client.User.Player.ID,
 			Action:   HoldemActionCall,
 			Amount:   toCall,
 		}
 	} else if random >= 50 {
-		autoAction = HoldemAction{
+		autoAction = HoldemActionMessage{
 			PlayerID: player.Client.User.Player.ID,
 			Action:   HoldemActionRaise,
 			Amount:   player.Balance * 2 / 100,
 		}
 	} else if toCall == 0 && random < 50 {
-		autoAction = HoldemAction{
+		autoAction = HoldemActionMessage{
 			PlayerID: player.Client.User.Player.ID,
 			Action:   HoldemActionCheck,
 		}
 	} else {
-		autoAction = HoldemAction{
+		autoAction = HoldemActionMessage{
 			PlayerID: player.Client.User.Player.ID,
 			Action:   HoldemActionFold,
 		}
@@ -1378,11 +1366,22 @@ func (h *Holdem) SendMessage(msgType HoldemMessageType, data interface{}) {
 		Timestamp: time.Now().Unix(),
 	}
 
-	h.messageChannel <- GameMessage{
-		PlayerID:    "",
-		MessageType: GameMessageTypePlayerAction,
-		Data:        msg,
+	jsonMsg, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("[ERROR] Failed to marshal message: %v", err)
+		return
 	}
+
+	response := models.Response{
+		Type: models.MessageTypeGameAction,
+		Data: models.MessageGameAction{
+			RoomID:   h.game.Room.ID,
+			GameType: int(GameTypeHoldem),
+			Data:     json.RawMessage(jsonMsg),
+		},
+	}
+
+	h.messageChannel <- response
 }
 
 func (h *Holdem) SendMessageToPlayer(playerID string, msgType HoldemMessageType, data interface{}) {
@@ -1392,23 +1391,33 @@ func (h *Holdem) SendMessageToPlayer(playerID string, msgType HoldemMessageType,
 		Timestamp: time.Now().Unix(),
 	}
 
-	h.messageChannel <- GameMessage{
-		PlayerID:    playerID,
-		MessageType: GameMessageTypePlayerAction,
-		Data:        msg,
+	jsonMsg, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("[ERROR] Failed to marshal message: %v", err)
+		return
 	}
+
+	response := models.Response{
+		Type: models.MessageTypeGameAction,
+		Data: models.MessageGameAction{
+			RoomID:   h.game.Room.ID,
+			PlayerID: playerID,
+			GameType: int(GameTypeHoldem),
+			Data:     json.RawMessage(jsonMsg),
+		},
+	}
+
+	h.messageChannel <- response
 }
 
 func (h *Holdem) StartMessageChannel() {
 	for {
 		select {
 		case msg := <-h.messageChannel:
-			if msg.ToGame {
-				h.game.Room.SendMessageToRoom(msg)
-			} else if msg.PlayerID == "" {
-				h.game.Room.SendMessageToPlayer(msg.PlayerID, msg)
+			if msg.Data.(models.MessageGameAction).PlayerID == "" {
+				h.game.Room.BroadcastToRoom(msg)
 			} else {
-				h.game.Room.SendMessageToRoom(msg)
+				h.game.Room.BroadcastToPlayer(msg.Data.(models.MessageGameAction).PlayerID, msg)
 			}
 		case <-h.doneChannel:
 			return
@@ -1465,7 +1474,7 @@ type GameView struct {
 	CurrentRound   HoldemRound
 }
 
-func (h *Holdem) GetGameState() interface{} {
+func (h *Holdem) GetGameState() any {
 	visibleCards := []models.Card{}
 	switch h.State.CurrentRound {
 	case Flop:
@@ -1485,8 +1494,6 @@ func (h *Holdem) GetGameState() interface{} {
 			Name:     player.Client.User.Player.Username,
 			Balance:  player.Balance,
 			Hand:     []models.Card{},
-			IsFolded: false,
-			IsAllIn:  false,
 		}
 
 		seat, ok := h.State.Seats[player.Position]

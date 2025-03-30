@@ -58,12 +58,6 @@ func (h *MessageHandler) HandleMessage(client *Client, message []byte) error {
 			return err
 		}
 		return h.handleLeaveGame(client, *message)
-	case models.MessageTypeStartGame:
-		message, err := ParseData[models.MessageStartGame](msg.Data)
-		if err != nil {
-			return err
-		}
-		return h.handleStartGame(client, *message)
 	case models.MessageTypeGameAction:
 		message, err := ParseData[models.MessageGameAction](msg.Data)
 		if err != nil {
@@ -77,22 +71,22 @@ func (h *MessageHandler) HandleMessage(client *Client, message []byte) error {
 }
 
 func (h *MessageHandler) handleRoomInfo(client *Client, message models.MessageRoomInfo) error {
-	// room := h.server.GetRoom(message.RoomID)
-	// if room == nil {
-	// 	return h.sendError(client, "Room not found")
-	// }
+	room := h.server.GetRoom(message.RoomID)
+	if room == nil {
+		return h.sendError(client, "Room not found")
+	}
 
-	// response := models.Response{
-	// 	Type: models.MessageTypeRoomInfo,
-	// 	Data: room,
-	// }
+	response := models.Response{
+		Type: models.MessageTypeRoomInfo,
+		Data: room.GetRoomState(),
+	}
 
-	// msgBytes, err := json.Marshal(response)
-	// if err != nil {
-	// 	return err
-	// }
+	msgBytes, err := json.Marshal(response)
+	if err != nil {
+		return err
+	}
 
-	// client.send <- msgBytes
+	client.send <- msgBytes
 	return nil
 }
 
@@ -104,6 +98,24 @@ func (h *MessageHandler) handleJoinRoom(client *Client, data models.MessageJoinR
 
 	if err := h.server.JoinRoom(room.ID, client); err != nil {
 		return h.sendError(client, fmt.Sprintf("Failed to join room: %v", err))
+	}
+
+	response := models.Response{
+		Type: models.MessageTypeJoinRoomOk,
+		Data: room.GetRoomState(),
+	}
+
+	if err := room.BroadcastToPlayer(client.User.Player.ID, response); err != nil {
+		return err
+	}
+
+	response = models.Response{
+		Type: models.MessageTypeJoinRoom,
+		Data: client.User.Player,
+	}
+
+	if err := room.BroadcastToOthers(client.User.Player.ID, response); err != nil {
+		return err
 	}
 
 	return nil
@@ -128,16 +140,6 @@ func (h *MessageHandler) handleJoinGame(client *Client, msg models.MessageJoinGa
 		log.Printf("[ERROR] Room not found - RoomID: %s, PlayerID: %s", msg.RoomID, client.User.Player.ID)
 		return h.sendError(client, "Room not found")
 	}
-
-	log.Printf("[INFO] Player attempting to join - RoomID: %s, PlayerID: %s, GameStatus: %s, PlayerCount: %d", room.ID, client.User.Player.ID, room.Game.Status, len(room.Game.Players))
-
-	// if room.IsGameActive() {
-	// 	log.Printf("[INFO] Cannot join active game - RoomID: %s, PlayerID: %s, GameStatus: %s", room.ID, client.User.Player.ID, room.Game.Status)
-	// 	return h.sendError(client, "Cannot join: Game is already in progress")
-	// }
-
-	// Ensure there's a game to join
-	// room.EnsureGameExists()
 
 	if err := h.roomManager.JoinRoom(room.ID, client); err != nil {
 		log.Printf("[ERROR] Failed to join room - RoomID: %s, PlayerID: %s, Error: %v", room.ID, client.User.Player.ID, err)
@@ -168,26 +170,6 @@ func (h *MessageHandler) handleLeaveGame(client *Client, msg models.MessageLeave
 	}
 
 	log.Printf("[INFO] Player left game - RoomID: %s, PlayerID: %s, RemainingPlayers: %d", room.ID, client.User.Player.ID, len(room.Game.Players))
-
-	h.broadcastRoomState(room)
-	return nil
-}
-
-func (h *MessageHandler) handleStartGame(client *Client, msg models.MessageStartGame) error {
-	room := h.server.GetRoom(msg.RoomID)
-	if room == nil {
-		log.Printf("[ERROR] Room not found for game start - RoomID: %s, PlayerID: %s", msg.RoomID, client.User.Player.ID)
-		return h.sendError(client, "Room not found")
-	}
-
-	log.Printf("[INFO] Attempting to start game - RoomID: %s, GameID: %s, PlayerCount: %d", room.ID, room.Game.ID, len(room.Game.Players))
-
-	if err := h.roomManager.StartGame(room.Game.ID); err != nil {
-		log.Printf("[ERROR] Failed to start game - RoomID: %s, GameID: %s, Error: %v", room.ID, room.Game.ID, err)
-		return h.sendError(client, fmt.Sprintf("Failed to start game: %v", err))
-	}
-
-	log.Printf("[INFO] Game started successfully - RoomID: %s, GameID: %s, PlayerCount: %d", room.ID, room.Game.ID, len(room.Game.Players))
 
 	h.broadcastRoomState(room)
 	return nil
@@ -230,7 +212,6 @@ func (h *MessageHandler) handleGameAction(client *Client, msg models.MessageGame
 		return h.sendError(client, fmt.Sprintf("Failed to process action: %v", err))
 	}
 
-	h.broadcastRoomState(room)
 	return nil
 }
 
@@ -249,9 +230,19 @@ func (h *MessageHandler) sendError(client *Client, errorMsg string) error {
 	return nil
 }
 
+// func (h *MessageHandler) broadcastToClient(client *Client, response models.Response) error {
+// 	msgBytes, err := json.Marshal(response)
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	client.send <- msgBytes
+// 	return nil
+// }
+
 func (h *MessageHandler) broadcastRoomState(room *Room) {
 	stateMsg := models.Response{
-		Type: models.MessageTypeGameInfo,
+		Type: models.MessageTypeRoomInfo,
 		Data: room.GetRoomState(),
 	}
 
@@ -265,34 +256,6 @@ func (h *MessageHandler) broadcastRoomState(room *Room) {
 
 	h.server.BroadcastToRoom(room.ID, msgBytes)
 }
-
-// func (h *MessageHandler) broadcastGameState(game *models.Game) {
-// 	// Create game state message
-// 	stateMsg := models.Response{
-// 		Type: models.MessageTypeGameInfo,
-// 		Data: game,
-// 	}
-
-// 	// Convert to JSON
-// 	msgBytes, err := json.Marshal(stateMsg)
-// 	if err != nil {
-// 		log.Printf("Error marshaling game state: %v", err)
-// 		return
-// 	}
-
-// 	// Broadcast to all players in the game
-// 	for _, player := range game.Players {
-// 		if client, ok := getClientByPlayerID(player.Player.ID); ok {
-// 			client.send <- msgBytes
-// 		}
-// 	}
-// }
-
-// // TODO: Implement this function to maintain a map of player IDs to clients
-// func getClientByPlayerID(playerID string) (*Client, bool) {
-// 	// This will be implemented when we add client tracking
-// 	return nil, false
-// }
 
 func ParseData[T any](data json.RawMessage) (*T, error) {
 	var result T

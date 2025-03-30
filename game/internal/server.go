@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
@@ -130,6 +131,22 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	go client.writePump()
 	go client.readPump()
+}
+
+func (s *Server) HandleRoomList(w http.ResponseWriter, r *http.Request) {
+	gameType := r.URL.Query().Get("game_type")
+	var gameTypeInt int
+	if gameType == "" {
+		gameTypeInt = int(GameTypeHoldem)
+	}
+
+	if gameTypeInt == 0 {
+		http.Error(w, "Invalid game type", http.StatusBadRequest)
+		return
+	}
+
+	rooms := s.roomManager.GetRoomsByGameType(GameType(gameTypeInt))
+	json.NewEncoder(w).Encode(rooms)
 }
 
 func (s *Server) GetRoom(roomID string) *Room {

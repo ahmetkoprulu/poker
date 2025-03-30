@@ -48,7 +48,7 @@ type Event struct {
 	Type          EventType          `json:"type"`
 	Name          string             `json:"name"`
 	Assets        []Asset            `json:"assets"`
-	Config        map[string]any     `json:"config"`
+	Config        map[string]any     `json:"event_config"`
 	GeneralConfig EventGeneralConfig `json:"general_config"`
 	CreatedAt     time.Time          `json:"created_at,omitempty"`
 	UpdatedAt     time.Time          `json:"updated_at,omitempty"`
@@ -156,10 +156,10 @@ type PlayEventRequest struct {
 }
 
 type PlayerEventScheduleDetail struct {
-	ScheduleID string
-	StartTime  time.Time
-	EndTime    time.Time
+	ScheduleID string    `json:"ScheduleID"`
+	StartTime  time.Time `json:"StartTime"`
+	EndTime    time.Time `json:"EndTime"`
 
-	Event       Event
-	PlayerEvent *PlayerEventSchedule
+	Event       Event                `json:"Event"`
+	PlayerEvent *PlayerEventSchedule `json:"PlayerEvent"`
 }

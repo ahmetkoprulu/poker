@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/ahmetkoprulu/rtrp/game/models"
 	"github.com/google/uuid"
 )
 
@@ -18,13 +19,13 @@ const (
 	GameStatusEnd      GameStatus = "end"
 )
 
-type GamePlayerStatus string
+type GamePlayerStatus int
 
 const (
-	GamePlayerStatusWaiting  GamePlayerStatus = "waiting"
-	GamePlayerStatusActive   GamePlayerStatus = "active"
-	GamePlayerStatusInactive GamePlayerStatus = "inactive"
-	GamePlayerStatusFolded   GamePlayerStatus = "folded"
+	GamePlayerStatusWaiting GamePlayerStatus = iota
+	GamePlayerStatusActive
+	GamePlayerStatusInactive
+	GamePlayerStatusFolded
 )
 
 type GameActionType string
@@ -45,10 +46,10 @@ var (
 	ErrorGameNotReady        GameError = errors.New("game_not_ready")
 )
 
-type GameType string
+type GameType int
 
 const (
-	GameTypeHoldem GameType = "holdem"
+	GameTypeHoldem GameType = 1
 )
 
 type IPlayable interface {
@@ -80,12 +81,7 @@ type GameMessage struct {
 type GameMessageType string
 
 const (
-	GameMessageTypePlayerJoin   GameMessageType = "player_join"
-	GameMessageTypePlayerLeave  GameMessageType = "player_leave"
 	GameMessageTypePlayerAction GameMessageType = "player_action"
-	GameMessageTypeGameStart    GameMessageType = "game_start"
-	GameMessageTypeGameEnd      GameMessageType = "game_end"
-	GameMessageTypeGameState    GameMessageType = "game_state"
 )
 
 type IGamePlayer interface {
@@ -99,31 +95,23 @@ type GamePlayer struct {
 	LastAction string           `json:"last_action"`
 	Client     *Client          `json:"client"`
 	Status     GamePlayerStatus `json:"status"`
-	Data       IGamePlayer      `json:"data"`
 }
 
 type Game struct {
-	ID          string           `json:"id"`
-	Status      GameStatus       `json:"status"`
-	GameType    GameType         `json:"game_type"`
-	Players     []*GamePlayer    `json:"players"`
-	Playable    IPlayable        `json:"playable"`
-	MinBet      int              `json:"min_bet"`
-	MaxPlayers  int              `json:"max_players"`
-	ActionChan  chan GameAction  `json:"-"`
-	MessageChan chan GameMessage `json:"-"`
-	Room        *Room            `json:"-"`
-	Mu          sync.RWMutex     `json:"-"`
+	ID          string               `json:"id"`
+	Status      GameStatus           `json:"status"`
+	GameType    GameType             `json:"game_type"`
+	Players     []*GamePlayer        `json:"players"`
+	Playable    IPlayable            `json:"playable"`
+	MinBet      int                  `json:"min_bet"`
+	MaxPlayers  int                  `json:"max_players"`
+	ActionChan  chan GameAction      `json:"-"`
+	MessageChan chan models.Response `json:"-"`
+	Room        *Room                `json:"-"`
+	Mu          sync.RWMutex         `json:"-"`
 }
 
-type GameState struct {
-	Status   GameStatus    `json:"status"`
-	GameType GameType      `json:"game_type"`
-	Players  []*GamePlayer `json:"players"`
-	State    interface{}   `json:"state"`
-}
-
-func NewGame(actionChan chan GameAction, messageChan chan GameMessage, room *Room, maxPlayers int, minBet int, gameType GameType) *Game {
+func NewGame(actionChan chan GameAction, messageChan chan models.Response, room *Room, maxPlayers int, minBet int, gameType GameType) *Game {
 	return &Game{
 		ID:          uuid.New().String(),
 		Status:      GameStatusWaiting,
@@ -209,10 +197,6 @@ func (g *Game) End() error {
 	return nil
 }
 
-func (g *Game) GetGameState() GameState {
-	return GameState{
-		Status:   g.Status,
-		GameType: g.GameType,
-		State:    g.Playable.GetGameState(),
-	}
+func (g *Game) GetGameState() interface{} {
+	return g.Playable.GetGameState()
 }

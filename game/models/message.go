@@ -8,13 +8,12 @@ type MessageType string
 const (
 	MessageTypeRoomInfo   MessageType = "room_info"
 	MessageTypeJoinRoom   MessageType = "room_join"
+	MessageTypeJoinRoomOk MessageType = "room_join_ok"
 	MessageTypeLeaveRoom  MessageType = "room_leave"
 	MessageTypeJoinGame   MessageType = "game_join"
+	MessageTypeJoinGameOk MessageType = "game_join_ok"
 	MessageTypeLeaveGame  MessageType = "game_leave"
-	MessageTypeStartGame  MessageType = "game_start"
 	MessageTypeGameAction MessageType = "game_action"
-	MessageTypeGameInfo   MessageType = "game_info"
-	MessageTypePlayerList MessageType = "player_list"
 	MessageTypeError      MessageType = "error"
 )
 
@@ -60,8 +59,8 @@ type MessageStartGame struct {
 }
 
 type MessageGameAction struct {
-	Action   string          `json:"action"`
 	RoomID   string          `json:"roomId"`
 	PlayerID string          `json:"playerId"`
+	GameType int             `json:"gameType"`
 	Data     json.RawMessage `json:"data"`
 }

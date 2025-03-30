@@ -10,20 +10,20 @@ import (
 )
 
 type Client struct {
-	User           *models.User
-	authToken      string
-	IpAddress      string
-	ConnectionTime time.Time
-	ConnectCount   int
-	DisconnectTime time.Time
-	IdleTime       time.Time
-	Conn           *websocket.Conn
-	Server         *Server
-	mu             sync.Mutex
-	CurrentRoom    *Room
-	CurrentGame    *Game
-	IsDisconnected bool
-	send           chan []byte
+	User           *models.User    `json:"user"`
+	authToken      string          `json:"-"`
+	IpAddress      string          `json:"-"`
+	ConnectionTime time.Time       `json:"-"`
+	ConnectCount   int             `json:"-"`
+	DisconnectTime time.Time       `json:"-"`
+	IdleTime       time.Time       `json:"-"`
+	Conn           *websocket.Conn `json:"-"`
+	Server         *Server         `json:"-"`
+	mu             sync.Mutex      `json:"-"`
+	CurrentRoom    *Room           `json:"-"`
+	CurrentGame    *Game           `json:"-"`
+	IsDisconnected bool            `json:"-"`
+	send           chan []byte     `json:"-"`
 }
 
 func (c *Client) readPump() {

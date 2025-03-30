@@ -74,6 +74,7 @@ func (h *EventHandler) HandleReward(ctx context.Context, tx data.QueryRunner, pl
 
 type SpinHandler struct{}
 
+// TODO: SPin column does not exists.
 func (h *SpinHandler) HandleReward(ctx context.Context, tx data.QueryRunner, playerID string, item models.Item) error {
 	updateQuery := `
 		UPDATE players

@@ -25,6 +25,7 @@ func main() {
 
 	http.Handle("/", http.FileServer(http.Dir("./public")))
 	http.HandleFunc("/ws", wsServer.HandleWebSocket)
+	http.HandleFunc("/rooms", wsServer.HandleRoomList)
 	log.Println("Starting game server on :" + config.ServerPort + "...")
 	log.Println("Default room created and ready for connections")
 	if err := http.ListenAndServe(":"+config.ServerPort, nil); err != nil {
