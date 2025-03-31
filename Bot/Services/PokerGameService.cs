@@ -1,15 +1,14 @@
 using Bot.Models;
+using Websocket.Models;
 
 namespace Bot.Services;
 
 public interface IPokerGameService
 {
     Task<GameAction> DetermineNextAction(Game game, string playerId);
-    Task<PokerHand> EvaluateHand(List<Card> playerCards, List<Card> communityCards);
     bool IsPlayerTurn(Game game, string playerId);
     int CalculateMinRaise(Game game);
     bool ShouldFold(List<Card> holeCards);
-    int CalculateHandStrength(List<Card> holeCards, List<Card> communityCards);
 }
 
 public class PokerGameService : IPokerGameService

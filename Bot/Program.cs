@@ -1,9 +1,11 @@
-﻿using Bot.Services;
+﻿using Bot.Models;
+using Bot.Extensions;
+using Bot.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
+using Websocket.Services;
 
 namespace Bot;
 
@@ -12,12 +14,26 @@ public class Program
     public static async Task Main(string[] args)
     {
         var host = CreateHostBuilder(args).Build();
-        var webSocketClient = host.Services.GetRequiredService<IWebSocketClientService>();
+        var botService = host.Services.GetRequiredService<BotService>();
+        var webSocketClient = host.Services.GetRequiredService<IWebSocketClient>();
+        var messageHandlerRegistry = host.Services.GetRequiredService<MessageHandlerRegistry>();
         var logger = host.Services.GetRequiredService<ILogger<Program>>();
 
         try
         {
-            await webSocketClient.StartAsync();
+            // messageHandlerRegistry.On<string>(MessageType.Error, async (error) =>
+            // {
+            //     logger.LogError("Received error: {Error}", error);
+            // });
+
+            // messageHandlerRegistry.OnError(async (error) =>
+            // {
+            //     logger.LogError("WebSocket error: {Error}", error);
+            // });
+
+            // _wsUrl = configuration["WebSocketUrl"] ?? "ws://localhost:8080/ws";
+
+            // await webSocketClient.StartAsync();
             logger.LogInformation("Bot started successfully");
 
             // Join a game room
@@ -47,8 +63,9 @@ public class Program
 
                 // Add services
                 services.AddSingleton<IAuthService, AuthService>();
-                services.AddSingleton<IPokerGameService, PokerGameService>();
-                services.AddSingleton<IWebSocketClientService, WebSocketClientService>();
+                services.AddSingleton<BotService>();
+                services.AddSingleton<IWebSocketClient, WebSocketClient>();
+                services.AddSingleton<MessageHandlerRegistry>();
 
                 // Configure logging
                 services.AddLogging(builder =>

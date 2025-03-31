@@ -29,38 +29,33 @@ type Response struct {
 }
 
 type MessageRoomInfo struct {
-	RoomID string `json:"roomId"`
+	RoomID string `json:"room_id"`
 }
 
 type MessageJoinRoom struct {
-	RoomID   string `json:"roomId"`
-	PlayerID string `json:"playerId"`
+	RoomID   string `json:"room_id"`
+	PlayerID string `json:"player_id"`
 }
 
 type MessageLeaveRoom struct {
-	RoomID   string `json:"roomId"`
-	PlayerID string `json:"playerId"`
+	RoomID   string `json:"room_id"`
+	PlayerID string `json:"player_id"`
 }
 
 type MessageJoinGame struct {
-	RoomID   string `json:"roomId"`
-	PlayerID string `json:"playerId"`
+	RoomID   string `json:"room_id"`
+	PlayerID string `json:"player_id"`
 	Position int    `json:"position"`
 }
 
 type MessageLeaveGame struct {
-	RoomID   string `json:"roomId"`
-	PlayerID string `json:"playerId"`
-}
-
-type MessageStartGame struct {
-	RoomID   string `json:"roomId"`
-	PlayerID string `json:"playerId"`
+	RoomID   string `json:"room_id"`
+	PlayerID string `json:"player_id"`
 }
 
 type MessageGameAction struct {
-	RoomID   string          `json:"roomId"`
-	PlayerID string          `json:"playerId"`
-	GameType int             `json:"gameType"`
+	RoomID   string          `json:"room_id"`
+	PlayerID string          `json:"player_id"`
+	GameType int             `json:"game_type"`
 	Data     json.RawMessage `json:"data"`
 }
