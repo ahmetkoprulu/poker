@@ -27,6 +27,14 @@ public class Card
     [JsonProperty("hidden")] public bool Hidden { get; set; }
 }
 
+public class GameMessage
+{
+    [JsonProperty("room_id")] public string RoomId { get; set; }
+    [JsonProperty("player_id")] public string PlayerId { get; set; }
+    [JsonProperty("game_type")] public GameType GameType { get; set; }
+    [JsonProperty("data")] public object Data { get; set; }
+}
+
 public enum PlayerStatus
 {
     Waiting,

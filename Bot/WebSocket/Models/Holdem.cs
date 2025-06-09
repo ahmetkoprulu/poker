@@ -1,9 +1,9 @@
-using System.Text.Json.Serialization;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Websocket.Models;
 
-public class HoldemState
+public class HoldemGameState
 {
     [JsonProperty("players")] public IEnumerable<HoldemPlayer> Players { get; set; }
     [JsonProperty("community_cards")] public IEnumerable<Card> CommunityCards { get; set; }
@@ -35,37 +35,38 @@ public class HandResult
     [JsonProperty("player_id")] public string PlayerId { get; set; }
 }
 
-public class HoldemMessage
+public class HoldemResponse
 {
-    public HoldemMessageType Type { get; set; }
-    public object Data { get; set; }
-    public long Timestamp { get; set; }
+    [JsonProperty("room_id")] public string RoomId { get; set; }
+    [JsonProperty("type")] public HoldemMessageType Type { get; set; }
+    [JsonProperty("data")] public JToken Data { get; set; }
+    [JsonProperty("state")] public HoldemGameState State { get; set; }
 }
 
 public class HoldemActionMessage
 {
-    public string PlayerId { get; set; }
-    public HoldemAction Action { get; set; }
-    public int Amount { get; set; }
+    [JsonProperty("player_id")] public string PlayerId { get; set; }
+    [JsonProperty("action")] public HoldemAction Action { get; set; }
+    [JsonProperty("amount")] public int Amount { get; set; }
 }
 
 public class HoldemWinnerMessage
 {
-    public string PlayerId { get; set; }
-    public int Amount { get; set; }
+    [JsonProperty("player_id")] public string PlayerId { get; set; }
+    [JsonProperty("amount")] public int Amount { get; set; }
 }
 
 public class HoldemShowdownMessage
 {
-    public List<HandResult> Winners { get; set; }
-    public int Pot { get; set; }
-    public object GameState { get; set; }
+    [JsonProperty("winners")] public List<HandResult> Winners { get; set; }
+    [JsonProperty("pot")] public int Pot { get; set; }
+    [JsonProperty("state")] public object GameState { get; set; }
 }
 
 public class HoldemPlayerTurnMessage
 {
-    public string PlayerId { get; set; }
-    public int Timeout { get; set; }
+    [JsonProperty("player_id")] public string PlayerId { get; set; }
+    [JsonProperty("timeout")] public int Timeout { get; set; }
 }
 
 public enum HoldemMessageType : short

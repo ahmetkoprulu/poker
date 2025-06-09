@@ -6,6 +6,7 @@ public interface IWebSocketClient : IDisposable
 {
     event Func<string, Task> OnError;
     string PlayerId { get; }
+    void SetMessageHandlerRegistry(MessageHandlerRegistry messageHandlerRegistry);
     Task StartAsync(string playerId, string token, string wsUrl);
     Task JoinRoomAsync(string roomId);
     Task LeaveRoomAsync(string roomId);

@@ -6,6 +6,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Websocket.Services;
+using Websocket.Client;
+using Websocket.Models;
 
 namespace Bot;
 
@@ -18,32 +20,12 @@ public class Program
         var webSocketClient = host.Services.GetRequiredService<IWebSocketClient>();
         var messageHandlerRegistry = host.Services.GetRequiredService<MessageHandlerRegistry>();
         var logger = host.Services.GetRequiredService<ILogger<Program>>();
+        webSocketClient.SetMessageHandlerRegistry(messageHandlerRegistry);
 
         try
         {
-            // messageHandlerRegistry.On<string>(MessageType.Error, async (error) =>
-            // {
-            //     logger.LogError("Received error: {Error}", error);
-            // });
-
-            // messageHandlerRegistry.OnError(async (error) =>
-            // {
-            //     logger.LogError("WebSocket error: {Error}", error);
-            // });
-
-            // _wsUrl = configuration["WebSocketUrl"] ?? "ws://localhost:8080/ws";
-
-            // await webSocketClient.StartAsync();
-            logger.LogInformation("Bot started successfully");
-
-            // Join a game room
-            var roomId = host.Services.GetRequiredService<IConfiguration>()["RoomId"];
-            var position = host.Services.GetRequiredService<IConfiguration>()["Position"];
-            if (!string.IsNullOrEmpty(roomId))
-            {
-                await webSocketClient.JoinGameAsync(roomId, int.Parse(position));
-                logger.LogInformation("Joined game room: {RoomId}", roomId);
-            }
+            await botService.StartAsync();
+            // botService.PromptLobbyAction();
 
             // Keep the application running
             await host.RunAsync();
@@ -63,6 +45,7 @@ public class Program
 
                 // Add services
                 services.AddSingleton<IAuthService, AuthService>();
+                services.AddSingleton<IGameSerivice<HoldemGameState, HoldemActionMessage>, HoldemGameService>();
                 services.AddSingleton<BotService>();
                 services.AddSingleton<IWebSocketClient, WebSocketClient>();
                 services.AddSingleton<MessageHandlerRegistry>();

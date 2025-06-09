@@ -1,9 +1,8 @@
-using System.Drawing;
-using System.Net.WebSockets;
+using NativeWebSocket;
 using System.Text;
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using Pastel;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Websocket.Models;
 
 namespace Websocket.Services;
@@ -12,7 +11,7 @@ public class WebSocketClient : IWebSocketClient
 {
     private readonly ILogger<WebSocketClient> _logger;
     private MessageHandlerRegistry MessageHandlerRegistry;
-    private readonly ClientWebSocket _webSocket = new();
+    private WebSocket _webSocket;
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private string _playerId;
     private string _wsUrl;
@@ -33,16 +32,40 @@ public class WebSocketClient : IWebSocketClient
         {
             _playerId = playerId;
             _wsUrl = wsUrl;
-            _webSocket.Options.SetRequestHeader("Authorization", $"Bearer {token}");
-            await _webSocket.ConnectAsync(new Uri($"ws://{wsUrl}/ws"), _cancellationTokenSource.Token);
-            _logger.LogInformation("Connected to WebSocket server");
 
-            // Start receiving messages
-            _ = ReceiveMessagesAsync();
+            var headers = new Dictionary<string, string> { { "Authorization", $"Bearer {token}" } };
+            _webSocket = new WebSocket($"ws://{_wsUrl}/ws?token={token}", headers);
+
+            _webSocket.OnOpen += () =>
+            {
+                _logger.LogInformation("Connected to WebSocket server via WebSocket");
+            };
+
+            _webSocket.OnMessage += async bytes =>
+            {
+                var messageJson = Encoding.UTF8.GetString(bytes);
+                await HandleMessageAsync(messageJson);
+            };
+
+            _webSocket.OnError += async errorMsg =>
+            {
+                _logger.LogError($"WebSocket error: {errorMsg}");
+                if (OnError != null)
+                    await OnError.Invoke(errorMsg);
+            };
+
+            _webSocket.OnClose += async closeCode =>
+            {
+                _logger.LogInformation($"WebSocket connection closed with code: {closeCode}");
+            };
+
+            await _webSocket.Connect();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to start WebSocket client");
+            _logger.LogError(ex, "Failed to start WebSocket client with NativeWebSocket");
+            if (OnError != null)
+                await OnError.Invoke(ex.Message);
             throw;
         }
     }
@@ -51,60 +74,31 @@ public class WebSocketClient : IWebSocketClient
     {
         try
         {
-            var json = JsonSerializer.Serialize(message);
-            var buffer = Encoding.UTF8.GetBytes(json);
-            await _webSocket.SendAsync(
-                new ArraySegment<byte>(buffer),
-                WebSocketMessageType.Text,
-                true,
-                _cancellationTokenSource.Token);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error sending message");
-            if (OnError != null)
-                await OnError.Invoke(ex.Message);
-        }
-    }
-
-    private async Task ReceiveMessagesAsync()
-    {
-        var buffer = new byte[4096];
-
-        try
-        {
-            while (_webSocket.State == WebSocketState.Open)
+            if (_webSocket == null || _webSocket.State != WebSocketState.Open)
             {
-                var result = await _webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), _cancellationTokenSource.Token);
+                _logger.LogWarning("WebSocket is not open. Cannot send message.");
+                if (OnError != null)
+                    await OnError.Invoke("WebSocket is not open. Cannot send message. Type:" + message.Type);
 
-                if (result.MessageType == WebSocketMessageType.Close)
-                {
-                    await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, _cancellationTokenSource.Token);
-                    break;
-                }
-
-                var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                await HandleMessageAsync(message);
+                return;
             }
+
+            var json = JsonConvert.SerializeObject(message);
+            await _webSocket.SendText(json);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in WebSocket receive loop");
+            _logger.LogError(ex, "Error sending message via NativeWebSocket");
             if (OnError != null)
                 await OnError.Invoke(ex.Message);
         }
-    }
-
-    private void SetMessageHandlerRegistry(MessageHandlerRegistry messageHandlerRegistry)
-    {
-        MessageHandlerRegistry = messageHandlerRegistry;
     }
 
     private async Task HandleMessageAsync(string messageJson)
     {
         try
         {
-            var message = JsonSerializer.Deserialize<Message<object>>(messageJson);
+            var message = JsonConvert.DeserializeObject<Response<object>>(messageJson);
             _logger.LogInformation("Received message: {Message}", messageJson);
             if (message == null)
             {
@@ -113,7 +107,7 @@ public class WebSocketClient : IWebSocketClient
             }
 
             _logger.LogInformation("Message type: {MessageType}", message.Type);
-            await MessageHandlerRegistry.HandleMessageAsync(message.Type, message.Data);
+            await MessageHandlerRegistry.HandleMessageAsync(message.Type, message);
         }
         catch (Exception ex)
         {
@@ -188,14 +182,16 @@ public class WebSocketClient : IWebSocketClient
 
     public async Task SendGameActionAsync<T>(string roomId, T action)
     {
-        var message = new Message<MessageGameAction<T>>
+        if (action == null) throw new ArgumentNullException(nameof(action));
+
+        var message = new Message<MessageGameAction>
         {
             Type = MessageType.GameAction,
-            Data = new MessageGameAction<T>
+            Data = new MessageGameAction
             {
                 RoomId = roomId,
                 PlayerId = _playerId,
-                Data = action
+                Data = JToken.FromObject(action)
             }
         };
 
@@ -207,72 +203,88 @@ public class WebSocketClient : IWebSocketClient
     public async Task<IEnumerable<RoomSummary>> GetRoomsByGameTypeAsync(GameType gameType)
     {
         var client = new HttpClient();
-        var response = await client.GetAsync($"http://{_wsUrl}/rooms?game_type={gameType}");
+        var response = await client.GetAsync($"http://{_wsUrl}/rooms?game_type={(int)gameType}");
         var content = await response.Content.ReadAsStringAsync();
-        var rooms = JsonSerializer.Deserialize<IEnumerable<RoomSummary>>(content);
+        var rooms = JsonConvert.DeserializeObject<IEnumerable<RoomSummary>>(content);
 
         return rooms ?? [];
     }
     #endregion
 
-    public void Dispose()
+    public void SetMessageHandlerRegistry(MessageHandlerRegistry messageHandlerRegistry)
+    {
+        MessageHandlerRegistry = messageHandlerRegistry;
+    }
+
+    public async Task CloseConnectionAsync()
     {
         _cancellationTokenSource.Cancel();
-        _webSocket.Dispose();
+
+        if (_webSocket != null && (_webSocket.State == NativeWebSocket.WebSocketState.Open || _webSocket.State == NativeWebSocket.WebSocketState.Connecting))
+        {
+            _logger.LogInformation("Closing WebSocket connection (NativeWebSocket)");
+            await _webSocket.Close();
+        }
         _cancellationTokenSource.Dispose();
+    }
+
+    public void Dispose()
+    {
+        CloseConnectionAsync().ConfigureAwait(false).GetAwaiter().GetResult();
     }
 }
 
 public class MessageHandlerRegistry
 {
-    private readonly Dictionary<string, List<Func<object, Task>>> _handlers = [];
+    private readonly Dictionary<string, List<Func<object, DateTime, Task>>> _handlers = [];
 
     public MessageHandlerRegistry()
     {
     }
 
-    public void On<T>(string eventName, Func<T, Task> handler)
+    public void On<T>(string eventName, Func<T, DateTime, Task> handler)
     {
-        if (!_handlers.TryGetValue(eventName, out List<Func<object, Task>>? value))
+        if (!_handlers.TryGetValue(eventName, out List<Func<object, DateTime, Task>>? value))
         {
             value ??= [];
             _handlers[eventName] = value;
         }
 
-        value.Add(async (data) =>
+        value.Add(async (data, timestamp) =>
         {
             try
             {
-                if (data is JsonElement element)
+                if (data is JToken element)
                 {
-                    var typedData = element.Deserialize<T>();
-                    if (typedData != null) await handler(typedData);
+                    var typedData = element.ToObject<T>();
+                    if (typedData != null) await handler(typedData, timestamp);
                 }
                 else
                 {
-                    await handler((T)data);
+                    var typedData = JsonConvert.DeserializeObject<T>(JsonConvert.SerializeObject(data));
+                    if (typedData != null) await handler(typedData, timestamp);
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Error] handling message of type {eventName}: {ex.Message}".Pastel(Color.Red));
+                Console.WriteLine($"[Error] handling message of type {eventName}: {ex.Message}");
                 throw;
             }
         });
     }
 
-    public async Task HandleMessageAsync(string messageType, object data)
+    public async Task HandleMessageAsync(string messageType, Response<object> data)
     {
         if (_handlers.TryGetValue(messageType, out var handlers))
         {
             foreach (var handler in handlers)
             {
-                await handler(data);
+                await handler(data.Data, data.Timestamp);
             }
         }
         else
         {
-            Console.WriteLine($"[Warning] No handler registered for message type: {messageType}".Pastel(Color.Yellow));
+            Console.WriteLine($"[Warning] No handler registered for message type: {messageType}");
         }
     }
 }

@@ -9,13 +9,15 @@ using Websocket.Services;
 
 namespace Bot.Services;
 
-public class BotService(IAuthService authService, IWebSocketClient webSocketClient, IConfiguration configuration, ILogger<BotService> logger)
+public class BotService(IAuthService authService, IWebSocketClient webSocketClient, MessageHandlerRegistry messageHandlerRegistry, IGameSerivice<HoldemGameState, HoldemActionMessage> gameService, IConfiguration configuration, ILogger<BotService> logger)
 {
+    private string WsUrl { get; set; }
     private string _token;
     private string _playerId;
     private IEnumerable<RoomSummary> _rooms;
-    private string _currentRoomId;
-    private RoomState _currentRoomState;
+    private string? _currentRoomId;
+    private RoomState? _currentRoomState;
+    private DateTime _lastStateTimestamp = DateTime.MinValue;
 
     public async Task StartAsync()
     {
@@ -29,23 +31,24 @@ public class BotService(IAuthService authService, IWebSocketClient webSocketClie
         var player = await authService.GetPlayerAsync(_token);
         logger.LogInformation("Authenticated as player {PlayerName} with {Chips} chips", player.Username, player.Chips);
 
-        // _rooms = await GetRooms();
-        // if (!_rooms.Any()) return;
+        WsUrl = configuration["WebSocketUrl"] ?? "ws://localhost:8080";
+        await webSocketClient.StartAsync(_playerId, _token, WsUrl);
+        RegisterHandlers();
 
-        // await JoinRoom(_rooms.First().Id);
+        _rooms = await GetRooms();
+        if (!_rooms.Any()) return;
+
+        await JoinRoom(_rooms.First().Id);
     }
 
     public async Task<IEnumerable<RoomSummary>> GetRooms()
     {
-        var wsUrl = configuration["WebSocketUrl"] ?? "ws://localhost:8080/ws";
-        await webSocketClient.StartAsync(_playerId, _token, wsUrl);
         var rooms = await webSocketClient.GetRoomsByGameTypeAsync(GameType.Holdem);
 
-        Console.WriteLine("Rooms:".Pastel(Color.LightBlue));
+        Console.WriteLine("Rooms:".Pastel(Color.YellowGreen));
         foreach (var room in rooms)
         {
-            var str = $"\t{room.Id} - {room.PlayersInGame} / {room.MaxGamePlayers} ({room.GameStatus})\n\t\tGame Type: {room.GameType} - Min Bet: {room.MinBet}";
-            Console.WriteLine(str.Pastel(Color.LightBlue));
+            Console.WriteLine($"\t{room.Id} ({room.GameType}) - {room.PlayersInGame} / {room.MaxGamePlayers} ({room.GameStatus}) - Min Bet: {room.MinBet}\n".Pastel(Color.YellowGreen));
         }
 
         return rooms;
@@ -56,46 +59,119 @@ public class BotService(IAuthService authService, IWebSocketClient webSocketClie
         await webSocketClient.JoinRoomAsync(roomId);
     }
 
+    public async Task TryJoinGame(string roomId, int? position = null)
+    {
+        position ??= gameService.GetAvailablePosition();
+        if (position == null)
+        {
+            Console.WriteLine("No available position found".Pastel(Color.IndianRed));
+            return;
+        }
+
+        await webSocketClient.JoinGameAsync(roomId, position.Value);
+    }
+
+    public void SetState(RoomState state, DateTime timestamp)
+    {
+        if (timestamp <= _lastStateTimestamp)
+        {
+            Console.WriteLine("Skipping state update".Pastel(Color.Gray));
+            return;
+        }
+
+        _lastStateTimestamp = timestamp;
+        _currentRoomState = state;
+        gameService.SetState(state.GameState);
+        Console.WriteLine($"State is updated".Pastel(Color.LightGreen));
+    }
+
     public void RegisterHandlers()
     {
-        var messageHandlerRegistry = new MessageHandlerRegistry();
-        messageHandlerRegistry.On<RoomState>(MessageType.RoomJoinOk, message =>
+        // Handles when the room join message is successfull
+        messageHandlerRegistry.On<RoomState>(MessageType.RoomJoinOk, (message, timestamp) =>
         {
-            _currentRoomId = message.RoomId;
-            _currentRoomState = message;
+            Console.WriteLine($"You joined Room {message.RoomId} - Type: {message.GameType}, Game Status: {message.GameStatus}".Pastel(Color.YellowGreen));
+            Console.WriteLine("Players: ".Pastel(Color.YellowGreen));
+            foreach (var player in message.Players)
+            {
+                Console.WriteLine($"\t{player.Id} {player.Username}".Pastel(Color.YellowGreen));
+            }
+
+            SetState(message, timestamp);
+            _ = TryJoinGame(_currentRoomId);
+
             return Task.CompletedTask;
         });
 
-        messageHandlerRegistry.On<Player>(MessageType.RoomJoin, message =>
+        // Handles the new player joins the room.
+        messageHandlerRegistry.On<MessageRoomJoinResponse>(MessageType.RoomJoin, (message, timestamp) =>
         {
-            Console.WriteLine($"Joined game {message.Id}".Pastel(Color.LightGreen));
-            _currentRoomState.Players.Add(message);
+            Console.WriteLine($"The Player {message.PlayerId} Joined Room {message.RoomId}".Pastel(Color.YellowGreen));
+
+            SetState(message.State.ToObject<RoomState>(), timestamp);
             return Task.CompletedTask;
         });
 
-        messageHandlerRegistry.On<Player>(MessageType.RoomLeave, message =>
+
+        // Handles the room leave message is successfull
+        messageHandlerRegistry.On<RoomState>(MessageType.RoomLeaveOk, (message, timestamp) =>
         {
-            Console.WriteLine($"Left game {message.Id}".Pastel(Color.Pink));
-            _currentRoomState.Players.Remove(message);
+            Console.WriteLine($"You left room {_currentRoomId}".Pastel(Color.Pink));
+            _currentRoomId = null;
+            _currentRoomState = null;
             return Task.CompletedTask;
         });
 
-        messageHandlerRegistry.On<RoomState>(MessageType.GameJoin, message =>
+        // Handles the a player lefts the room
+        messageHandlerRegistry.On<MessageRoomLeaveResponse>(MessageType.RoomLeave, (message, timestamp) =>
         {
-            Console.WriteLine($"Joined game {message.RoomId}".Pastel(Color.LightGreen));
-            _currentRoomId = message.RoomId;
-            _currentRoomState = message;
+            Console.WriteLine($"The Player {message.PlayerId} left room {message.RoomId}".Pastel(Color.Pink));
+            var state = message.State.ToObject<RoomState>();
+            SetState(state, timestamp);
+
             return Task.CompletedTask;
         });
 
-        messageHandlerRegistry.On<MessageGameLeave>(MessageType.GameLeave, message =>
+        // Handles the game join request is successfull
+        messageHandlerRegistry.On<MessageGameJoinResponse>(MessageType.GameJoinOk, (message, timestamp) =>
+        {
+            Console.WriteLine($"You joined game {message.RoomId} the game at position {message.Position}.".Pastel(Color.LightGreen));
+            var state = message.State.ToObject<RoomState>();
+            SetState(state, timestamp);
+
+            return Task.CompletedTask;
+        });
+
+        // Handles the new player joins the game
+        messageHandlerRegistry.On<MessageGameJoinResponse>(MessageType.GameJoin, (message, timestamp) =>
+        {
+            Console.WriteLine($"The Player {message.Player.Id} joined game at position {message.Position} in {message.RoomId}.".Pastel(Color.LightGreen));
+            var state = message.State.ToObject<RoomState>();
+            SetState(state, timestamp);
+
+            return Task.CompletedTask;
+        });
+
+
+        messageHandlerRegistry.On<MessageGameLeaveResponse>(MessageType.GameLeave, (message, timestamp) =>
+        {
+            Console.WriteLine($"You left game {message.RoomId}.".Pastel(Color.Pink));
+            var state = message.State.ToObject<RoomState>();
+            SetState(state, timestamp);
+
+            return Task.CompletedTask;
+        });
+
+        messageHandlerRegistry.On<MessageGameLeave>(MessageType.GameLeave, (message, timestamp) =>
         {
             Console.WriteLine($"Left game {message.RoomId}".Pastel(Color.Pink));
+            // var state = message.State.ToObject<RoomState>();
+            // SetState(state, timestamp);
 
             return Task.CompletedTask;
         });
 
-        messageHandlerRegistry.On<MessageGameAction<HoldemMessage>>(MessageType.GameHoldemAction, message =>
+        messageHandlerRegistry.On<MessageGameAction>(MessageType.GameHoldemAction, (message, timestamp) =>
         {
             if (message.RoomId != _currentRoomId) return Task.CompletedTask;
             var data = JsonConvert.SerializeObject(message.Data);

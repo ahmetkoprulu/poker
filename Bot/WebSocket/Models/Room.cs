@@ -1,5 +1,6 @@
 using Bot.Models;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Websocket.Models;
 
@@ -40,8 +41,9 @@ public class RoomState
     [JsonProperty("status")] public string Status { get; set; }
     [JsonProperty("players")] public List<Player> Players { get; set; }
     [JsonProperty("max_players")] public int MaxPlayers { get; set; }
+    [JsonProperty("max_game_players")] public int MaxGamePlayers { get; set; }
     [JsonProperty("min_bet")] public int MinBet { get; set; }
     [JsonProperty("game_type")] public GameType GameType { get; set; }
     [JsonProperty("game_status")] public string GameStatus { get; set; }
-    [JsonProperty("game_state")] public object GameState { get; set; }
+    [JsonProperty("game_state")] public JToken GameState { get; set; }
 }

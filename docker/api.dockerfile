@@ -8,11 +8,11 @@ RUN apk add --no-cache git
 WORKDIR /build
 
 # Copy go mod files
-COPY api/go.mod api/go.sum ./
+COPY service_api/go.mod service_api/go.sum ./
 RUN go mod download
 
 # Copy source code
-COPY api/ .
+COPY service_api/ .
 
 # Build the application with security flags
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o main ./cmd/api
