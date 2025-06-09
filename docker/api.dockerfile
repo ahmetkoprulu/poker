@@ -15,7 +15,7 @@ RUN go mod download
 COPY service_api/ .
 
 # Build the application with security flags
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o main ./cmd/api
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o main ./cmd/service_api
 
 # Final stage
 FROM alpine:3.19
@@ -30,11 +30,11 @@ COPY --from=builder /build/main .
 USER root
 
 # Add metadata labels
-LABEL maintainer="Poker Api" \
+LABEL maintainer="Poker service_api" \
       version="1.0" \
-      description="Poker Api"
+      description="Poker service_api"
 
-# Expose API port
+# Expose service_api port
 EXPOSE 7000:8000
 
 # Run the application

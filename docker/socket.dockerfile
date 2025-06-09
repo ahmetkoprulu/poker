@@ -15,7 +15,7 @@ RUN go mod download
 COPY service_socket/ .
 
 # Build the application with security flags
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o main ./cmd/main
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o main ./cmd/service_socket
 
 # Final stage
 FROM alpine:3.19
@@ -30,12 +30,12 @@ COPY --from=builder /build/main .
 USER root
 
 # Add metadata labels
-LABEL maintainer="Poker Socket" \
+LABEL maintainer="Poker service_socket" \
       version="1.0" \
-      description="Poker Socket"
+      description="Poker service_socket"
 
-# Expose API port
-EXPOSE 7070:7070
+# Expose service_socket port
+EXPOSE 7000:8000
 
 # Run the application
 CMD ["/app/main"]

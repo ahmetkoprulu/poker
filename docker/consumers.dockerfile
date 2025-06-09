@@ -15,7 +15,7 @@ RUN go mod download
 COPY service_consumers/ .
 
 # Build the application with security flags
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o main ./cmd/main
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o main ./cmd/service_consumers
 
 # Final stage
 FROM alpine:3.19
@@ -30,12 +30,12 @@ COPY --from=builder /build/main .
 USER root
 
 # Add metadata labels
-LABEL maintainer="Poker Consumers" \
+LABEL maintainer="Poker service_consumers" \
       version="1.0" \
-      description="Poker Consumers"
+      description="Poker service_consumers"
 
-# # Expose API port
-# EXPOSE 7001:8000
+# Expose service_consumers port
+EXPOSE 7000:8000
 
 # Run the application
 CMD ["/app/main"]
