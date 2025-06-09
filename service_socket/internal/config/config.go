@@ -10,10 +10,7 @@ import (
 var config *models.Config
 
 func LoadEnvironment() *models.Config {
-	err := godotenv.Load()
-	if err != nil {
-		return nil
-	}
+	_ = godotenv.Load()
 
 	config = &models.Config{
 		MqURL:       os.Getenv("MQ_URL"),

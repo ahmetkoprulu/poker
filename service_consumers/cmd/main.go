@@ -2,6 +2,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -18,6 +19,8 @@ import (
 
 func main() {
 	cfg := config.LoadEnvironment()
+	fmt.Println(cfg)
+
 	utils.InitLogger()
 	defer utils.Logger.Sync()
 
